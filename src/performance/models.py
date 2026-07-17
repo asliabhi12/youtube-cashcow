@@ -12,6 +12,14 @@ class HardwareBackend(str, Enum):
     SOFTWARE = "software"
 
 
+class BenchmarkProfile(str, Enum):
+    """Benchmark strategies with different scope and intent."""
+
+    ENCODER = "encoder"      # short clip; isolates encoder throughput from decode cost
+    TRANSCODE = "transcode"  # full input; measures the complete decode + encode pipeline
+    QUALITY = "quality"      # short clip across presets; compares size, time, and fps
+
+
 class HardwareCapabilities(BaseModel):
     platform: str
     machine: str
@@ -55,9 +63,30 @@ class PerformanceMetrics(BaseModel):
     hardware_used: bool
 
 
+class DecoderInfo(BaseModel):
+    """How the input stream is decoded before re-encoding."""
+
+    codec: str | None = None          # input video codec, e.g. "av1"
+    decoder: str | None = None        # resolved decoder, e.g. "libdav1d"
+    hardware: bool = False            # True when FFmpeg hardware acceleration is active
+
+    @property
+    def label(self) -> str:
+        if self.hardware:
+            return f"Hardware ({self.decoder})" if self.decoder else "Hardware"
+        return f"Software ({self.decoder})" if self.decoder else "Software"
+
+
 class BenchmarkResult(BaseModel):
     input_file: Path
     output_file: Path
     codec: str
     backend: HardwareBackend
     metrics: PerformanceMetrics
+    # Optional enrichment (defaults keep older callers and reports valid).
+    profile: BenchmarkProfile | None = None
+    preset: str | None = None
+    decoder: DecoderInfo | None = None
+    resolution: str | None = None
+    input_codec: str | None = None
+    input_duration: float | None = None

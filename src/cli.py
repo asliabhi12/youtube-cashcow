@@ -3,6 +3,7 @@
 Defines commands for run, config, version, and system diagnostics (doctor).
 """
 
+import json
 import sys
 from typing import Optional
 
@@ -22,7 +23,7 @@ from src.models import DownloadResult
 from src.exceptions import CashCowError
 from src.logger import get_logger, init_logger
 from src.pipeline import Pipeline, PipelineRunner, default_registry
-from src.performance import Benchmark, HardwareDetector, PerformanceEncoder
+from src.performance import Benchmark, BenchmarkProfile, DecoderDetector, HardwareDetector, PerformanceEncoder
 from src.processor import Processor
 from src.validator import (
     initialize_directories,
@@ -84,22 +85,90 @@ def performance(config_file: str = typer.Option(constants.DEFAULT_SETTINGS_FILE,
         raise typer.Exit(code=1)
 
 
-@app.command(name="benchmark", help="Benchmark hardware and software encoding for a local video.")
-def benchmark(input_file: str = typer.Argument(...), config_file: str = typer.Option(constants.DEFAULT_SETTINGS_FILE, "--config", "-c")):
+def _format_duration(seconds: float | None) -> str:
+    if not seconds:
+        return "unknown"
+    total = int(seconds)
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def _benchmark_report_table(results) -> Table:
+    table = Table(title="Encoding Benchmark")
+    for column in ("Encoder", "Decoder", "Preset", "Elapsed", "Avg FPS", "Speed", "Output", "CPU", "Memory", "Resolution", "Codec"):
+        table.add_column(column)
+    for result in results:
+        metric = result.metrics
+        table.add_row(
+            result.codec,
+            result.decoder.label if result.decoder else "-",
+            result.preset or "-",
+            f"{metric.duration_seconds:.2f}s",
+            f"{metric.average_fps or 0:.1f}",
+            f"{metric.encoding_speed or 0:.2f}x",
+            f"{metric.output_size_bytes / 1_000_000:.2f} MB",
+            f"{metric.cpu_percent or 0:.1f}%",
+            f"{(metric.memory_bytes or 0) / 1_000_000:.1f} MB",
+            result.resolution or "-",
+            result.input_codec or "-",
+        )
+    return table
+
+
+@app.command(name="benchmark", help="Benchmark encoding for a local video. Profiles: encoder (short clip), transcode (full file), quality (multi-preset).")
+def benchmark(
+    input_file: str = typer.Argument(..., help="Path to a local video file to benchmark."),
+    profile: str = typer.Option("encoder", "--profile", "-p", help="encoder | transcode | quality"),
+    duration: Optional[float] = typer.Option(None, "--duration", "-d", help="Clip length in seconds (overrides the profile default; uses FFmpeg -t)."),
+    json_output: Optional[str] = typer.Option(None, "--json", help="Write a machine-readable report to this JSON file."),
+    config_file: str = typer.Option(constants.DEFAULT_SETTINGS_FILE, "--config", "-c"),
+):
     try:
         settings = load_config(config_file)
         if not settings.performance.benchmark:
             raise RuntimeError("Benchmarks are disabled in performance.benchmark")
         init_logger(settings.logging.level, settings.logging.log_dir, settings.app.debug)
+        try:
+            selected = BenchmarkProfile(profile.lower())
+        except ValueError:
+            raise RuntimeError(f"Unknown profile '{profile}'. Choose encoder, transcode, or quality.")
+
         processor = Processor(settings)
-        results = Benchmark.from_processor(processor).compare(input_file)
-        table = Table(title="Encoding Benchmark")
-        for column in ("Backend", "Encoding", "Time", "FPS", "Output", "CPU", "Memory"):
-            table.add_column(column)
-        for result in results:
-            metric = result.metrics
-            table.add_row(result.backend.value, result.codec, f"{metric.duration_seconds:.2f}s", f"{metric.average_fps or 0:.1f}", f"{metric.output_size_bytes / 1_000_000:.2f} MB", f"{metric.cpu_percent or 0:.1f}%", f"{(metric.memory_bytes or 0) / 1_000_000:.1f} MB")
-        console.print(table)
+        bench = Benchmark.from_processor(processor)
+
+        # Inspect the input and detect the decode path before encoding, so the
+        # user sees what is being measured rather than a bare elapsed number.
+        info = processor.inspect(input_file)
+        decoder = DecoderDetector(processor.runner).detect(info.codec, settings.ffmpeg.hwaccel)
+        encode_backend = bench.encoder.decision().backend.value
+
+        console.print(Panel(
+            f"[bold white]Codec:[/bold white] {info.codec or 'unknown'}\n"
+            f"[bold white]Resolution:[/bold white] {info.width or '?'}x{info.height or '?'}\n"
+            f"[bold white]Duration:[/bold white] {_format_duration(info.duration)}\n"
+            f"[bold white]FPS:[/bold white] {info.fps or 'unknown'}\n"
+            f"[bold white]Bitrate:[/bold white] {f'{info.bitrate / 1000:.0f} kb/s' if info.bitrate else 'unknown'}",
+            title="[bold cyan]Input[/bold cyan]", border_style="cyan",
+        ))
+        clip = duration if duration else ("full file" if selected is BenchmarkProfile.TRANSCODE else "30s")
+        console.print(Panel(
+            f"[bold white]Profile:[/bold white] {selected.value}\n"
+            f"[bold white]Clip:[/bold white] {clip}\n"
+            f"[bold white]Decode:[/bold white] {decoder.label}\n"
+            f"[bold white]Encode:[/bold white] {encode_backend}",
+            title="[bold cyan]Benchmark[/bold cyan]", border_style="cyan",
+        ))
+
+        results = bench.run(input_file, profile=selected, duration=duration)
+        console.print(_benchmark_report_table(results))
+
+        if json_output:
+            payload = {
+                "input": info.model_dump(mode="json"),
+                "profile": selected.value,
+                "results": [result.model_dump(mode="json") for result in results],
+            }
+            Path(json_output).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            console.print(f"[success]Report written to[/success] {json_output}")
     except Exception as exc:
         console.print(f"[danger]Benchmark failed:[/danger] {exc}")
         raise typer.Exit(code=1)

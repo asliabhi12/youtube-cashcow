@@ -115,10 +115,13 @@ class PerformanceEncoder:
             args += ["-threads", str(threads)]
         return args
 
-    def encode(self, input_file: str | Path, output_file: str | Path, *, profile: str | None = None, force_software: bool = False) -> tuple[EncoderDecision, str, float]:
+    def encode(self, input_file: str | Path, output_file: str | Path, *, profile: str | None = None, force_software: bool = False, duration: float | None = None) -> tuple[EncoderDecision, str, float]:
         output = Path(output_file)
         decision = self.decision(profile, force_software=force_software)
-        args = ["-i", str(input_file), *self.args_for(decision, audio_bitrate=self.settings.ffmpeg.bitrate, threads=self.settings.ffmpeg.threads), "-y", str(output)]
+        # ``-t`` limits the output duration so every encoder processes an
+        # identical clip; execution still runs through FFmpegRunner unchanged.
+        limit = ["-t", str(duration)] if duration and duration > 0 else []
+        args = ["-i", str(input_file), *limit, *self.args_for(decision, audio_bitrate=self.settings.ffmpeg.bitrate, threads=self.settings.ffmpeg.threads), "-y", str(output)]
         _, stderr, elapsed = self.runner.run(args)
         if not output.is_file() or output.stat().st_size == 0:
             raise ProcessingFailedError(f"FFmpeg completed but did not create a valid output: {output}")

@@ -252,11 +252,32 @@ runtime and retain a software fallback when hardware is unavailable.
 python app.py hardware
 python app.py performance
 python app.py benchmark input.mp4
+python app.py benchmark input.mp4 --profile encoder --duration 30
+python app.py benchmark input.mp4 --profile transcode
+python app.py benchmark input.mp4 --profile quality --json benchmark.json
 ```
 
-`hardware` lists compiled FFmpeg encoders. `benchmark` compares the available
-hardware encoder with software and reports elapsed time, FFmpeg FPS/speed, output
-size, process CPU share, and memory high-water mark. Benchmark outputs are temporary;
+`hardware` lists compiled FFmpeg encoders. `benchmark` first inspects the input
+(codec, resolution, duration, fps, bitrate), detects the decode path — for example
+`Software (libdav1d)` for AV1 or `Hardware (<method>)` when `ffmpeg.hwaccel` is
+configured — and the encode backend, then prints an Input and a Benchmark panel
+before running.
+
+Profiles control scope:
+
+- **`encoder`** (default) benchmarks a short clip (30s) so encoder throughput is
+  isolated from software decode cost. This is the fix for AV1/HEVC inputs where
+  software decode would otherwise dominate the measured time.
+- **`transcode`** benchmarks the full file and measures the complete decode +
+  encode pipeline.
+- **`quality`** encodes several presets on the fastest available backend and
+  compares output size, elapsed time, and fps.
+
+`--duration N` limits every encoder to the same `N`-second clip via FFmpeg's `-t`
+option (clamped to the source length). The structured report shows encoder, decoder,
+preset, elapsed, average fps, speed (x realtime), output size, CPU share, memory
+high-water mark, resolution, and input codec. `--json <file>` writes the full report
+as machine-readable JSON for regression testing. Benchmark outputs are temporary;
 the typed report retains their measured sizes.
 
 Tune the behavior in `settings.yaml`:
