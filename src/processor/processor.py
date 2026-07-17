@@ -6,10 +6,10 @@ from typing import Callable
 from src.config import Settings
 from src.logger import get_logger
 
-from . import audio, concat, crop, overlay, resize, rotate, subtitles, thumbnail, trim, watermark
+from . import audio, compositor, concat, crop, overlay, resize, rotate, subtitles, thumbnail, trim, watermark
 from .encode import PRESETS, encoding_args
 from .ffprobe import FFprobe
-from .models import ProcessingResult, VideoInfo
+from .models import OverlayConfig, ProcessingResult, VideoInfo
 from .runner import FFmpegRunner
 
 ProgressCallback = Callable[[float], None]
@@ -48,6 +48,9 @@ class Processor:
     def resize(self, input_file: str, output_file: str, width: int | None = None, height: int | None = None, **kwargs) -> ProcessingResult: return resize.resize(self.runner, input_file, output_file, width, height, encode=self._encode(), **kwargs)
     def rotate(self, input_file: str, output_file: str, degrees: float, **kwargs) -> ProcessingResult: return rotate.rotate(self.runner, input_file, output_file, degrees, encode=self._encode(), **kwargs)
     def overlay(self, input_file: str, image_file: str, output_file: str, x: str | int = 0, y: str | int = 0, **kwargs) -> ProcessingResult: return overlay.overlay(self.runner, input_file, image_file, output_file, x, y, encode=self._encode(), **kwargs)
+    def composite(self, input_file: str, output_file: str, config: OverlayConfig | dict, *, progress: ProgressCallback | None = None, cancel_event: Event | None = None) -> ProcessingResult:
+        overlay_config = config if isinstance(config, OverlayConfig) else OverlayConfig(**config)
+        return compositor.composite(self.runner, input_file, overlay_config, output_file, encode=self._encode(), progress=progress, cancel_event=cancel_event)
     def watermark(self, input_file: str, output_file: str, *, image_file: str | None = None, text: str | None = None, **kwargs) -> ProcessingResult:
         if bool(image_file) == bool(text): raise ValueError("Provide exactly one of image_file or text")
         if image_file: return watermark.image_watermark(self.runner, input_file, image_file, output_file, encode=self._encode(), **kwargs)

@@ -179,8 +179,9 @@ processor.thumbnail("output/branded.mp4", "output/thumbnail.jpg", timestamp=3)
 ```
 
 Available operations include `trim`, `crop`, `resize`, `rotate`, `overlay`,
-`watermark`, `burn_subtitles`, `thumbnail`, `concat`, `extract_audio`,
-`replace_audio`, `mute`, `volume`, and `normalize`. Every successful operation returns
+`composite` (masked overlays, see Phase 6), `watermark`, `burn_subtitles`,
+`thumbnail`, `concat`, `extract_audio`, `replace_audio`, `mute`, `volume`, and
+`normalize`. Every successful operation returns
 a typed `ProcessingResult`; `inspect()` returns `VideoInfo`. Operations accept optional
 `progress` callbacks and cancellation events where applicable.
 
@@ -348,6 +349,80 @@ Production encoding presets are available as `src.performance.Preset`: `YOUTUBE_
 bitrate, audio bitrate, pixel format, GOP, fast-start, threading, and hardware
 preference defaults. Apple VideoToolbox decisions use hardware bitrate/quality options
 and `+faststart`, avoiding CPU encoding whenever the installed FFmpeg exposes it.
+
+---
+
+## 🎭 Masking & compositing (Phase 6)
+
+The compositing engine lays a masked image or video overlay onto the base video,
+the way CapCut, Premiere, and DaVinci masks work. It slots into the existing
+chain — `Pipeline → Processor → Compositor → FFmpegRunner` — so every command
+still executes only inside `src/processor/runner.py`. Three concerns stay
+isolated: `mask.py` generates alpha shapes, `overlay.py` resolves
+position/scale/rotation, and `compositor.py` assembles the filter graph.
+
+The base video is always fully visible outside the mask; only the overlay is
+scaled, masked, feathered, rotated, and faded.
+
+Add an `overlay` step with a `source` (image or video):
+
+```yaml
+name: masked_overlay
+steps:
+  - source:
+      path: input.mp4
+  - overlay:
+      source: assets/overlays/face.mp4
+      position:
+        x: center
+        y: center
+      scale: 0.4
+      opacity: 1.0
+      rotation: 0
+      mask:
+        type: circle
+        feather: 40
+  - export:
+      output: output/final.mp4
+```
+
+**Mask configuration.** `type` selects the shape (`circle` and `ellipse` today;
+the registry in `mask.py` accepts `rectangle`, `polygon`, and `alpha` later
+without touching callers). `feather` is the soft-edge radius in pixels, `width`
+and `height` size the shape (defaults fill the overlay), `rotation` turns it,
+and `invert` keeps the outside instead of the inside.
+
+**Overlay configuration.** `position` accepts named anchors (`center`,
+`top_left`, `top_right`, `bottom_left`, `bottom_right`, `top`, `bottom`, `left`,
+`right`) or pixel coordinates. Scaling is either `scale` (a fraction of the base
+width) or explicit `width`/`height` in pixels — not both. `opacity` is an alpha
+multiplier applied after the mask, and `rotation` turns the overlay. Image and
+video overlays use the same configuration; a still image is held for the base's
+full duration automatically.
+
+The programmatic API mirrors the other operations:
+
+```python
+from src.processor import Processor, OverlayConfig, MaskConfig
+
+processor = Processor(load_config())
+processor.composite("input.mp4", "output/final.mp4", OverlayConfig(
+    source="assets/overlays/face.mp4", x="center", y="center", scale=0.4,
+    mask=MaskConfig(type="circle", feather=40),
+))
+```
+
+The legacy image-only `overlay` step (an `image:` key) is unchanged and still
+works.
+
+**Performance notes.** Masking uses FFmpeg's `geq` filter to draw the alpha
+shape, which is evaluated per pixel and is more expensive than a plain overlay;
+feathering is folded into the same pass rather than adding a second encode.
+Overlay time appears as its own line in the pipeline benchmark's step breakdown
+(alongside `encode` and `export`) with no benchmark changes. Do **not** wrap
+image overlays in `-loop`/`-shortest`: the `overlay` filter already repeats the
+last overlay frame for the base's duration, and an unbounded looped image stream
+will hang the encode.
 
 ---
 

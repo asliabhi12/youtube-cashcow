@@ -11,7 +11,11 @@ from .models import WorkflowDefinition, WorkflowStep
 from .registry import StepRegistry
 
 
-FILE_OPTIONS = {"overlay": "image", "subtitles": "file", "concat": "files", "watermark": "image"}
+# Step -> option keys whose values are file paths that must exist before running.
+# ``overlay`` carries two mutually exclusive keys (legacy ``image`` and Phase 6
+# ``source``); ``LIST_FILE_OPTIONS`` marks keys whose value is a list of paths.
+FILE_OPTIONS = {"overlay": ("image", "source"), "subtitles": ("file",), "concat": ("files",), "watermark": ("image",)}
+LIST_FILE_OPTIONS = {"files"}
 
 
 def load_workflow(path: str | Path) -> WorkflowDefinition:
@@ -54,8 +58,10 @@ def validate_workflow(workflow: WorkflowDefinition, registry: StepRegistry) -> N
             instance.validate(step.options)
         except (TypeError, ValueError) as exc:
             raise PipelineValidationError(f"Invalid '{step.name}' configuration: {exc}") from exc
-        option = FILE_OPTIONS.get(step.name.lower())
-        values: list[Any] = step.options.get(option, []) if option == "files" else [step.options.get(option)]
+        values: list[Any] = []
+        for option in FILE_OPTIONS.get(step.name.lower(), ()):
+            raw = step.options.get(option)
+            values.extend(raw if option in LIST_FILE_OPTIONS and isinstance(raw, list) else [raw])
         for value in values:
             if value:
                 file_path = Path(value)

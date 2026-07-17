@@ -1,9 +1,6 @@
-# `name:` is now optional — the loader derives it from the filename stem.
-# Provide one for a stable, human-readable identifier in reports.
-name: youtube_short
+name: youtube_short_masked
 
 steps:
-  # First step must establish input media: one of download / source / concat.
   - download:
       url: https://www.youtube.com/watch?v=nINIJ1cAbYM
 
@@ -12,10 +9,22 @@ steps:
       end: 30
 
   - resize:
-      preset: shorts        # 1080x1920; or give explicit width + height
+      preset: shorts
 
-  - encode: {}              # re-encode with settings.yaml defaults (takes no options)
+  - overlay:
+      source: assets/overlays/over.jpg
+      position:
+        x: center
+        y: center
+      scale: 1.0
+      opacity: 1.0
+      rotation: 0
+      mask:
+        type: ellipse
+        feather: 100
+        invert: true
 
-  # Workflow must end with exactly one export.
+  - encode: {}
+
   - export:
-      output: output/short.mp4
+      output: output/short_masked.mp4

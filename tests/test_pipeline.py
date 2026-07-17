@@ -28,6 +28,12 @@ class FakeProcessor:
     def resize(self, source, output, *args, **options):
         self.resize_options.append(options); self._write("resize", source, output, **options)
     def thumbnail(self, source, output, timestamp, **options): self._write("thumbnail", source, output, **options)
+    def overlay(self, source, image, output, *args, **options):
+        self.overlay_calls = getattr(self, "overlay_calls", []); self.overlay_calls.append(("legacy", image, options))
+        self._write("overlay", source, output)
+    def composite(self, source, output, config, **options):
+        self.overlay_calls = getattr(self, "overlay_calls", []); self.overlay_calls.append(("composite", config, options))
+        self._write("overlay", source, output)
     def inspect(self, source): return SimpleNamespace(width=100, height=100)
 
 
@@ -91,3 +97,48 @@ def test_retry_and_failure_rollback(settings, tmp_path):
     with pytest.raises(PipelineStepError, match="crop"):
         PipelineRunner(settings, default_registry(), downloader=FakeDownloader(source), processor=SimpleNamespace(crop=lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("nope")))).run(failing)
     assert not list((tmp_path / "workspace").glob("run_*"))
+
+
+def test_overlay_step_routes_composite_with_mask(settings, tmp_path):
+    source = tmp_path / "source.mp4"; source.write_bytes(b"video")
+    overlay_media = tmp_path / "logo.png"; overlay_media.write_bytes(b"image")
+    workflow = WorkflowDefinition(name="composite", steps=[
+        WorkflowStep(name="source", options={"path": str(source)}),
+        WorkflowStep(name="overlay", options={"source": "logo.png", "position": {"x": "center", "y": "center"}, "scale": 0.4, "opacity": 1.0, "mask": {"type": "circle", "feather": 40}}),
+        WorkflowStep(name="export", options={"output": "final.mp4"}),
+    ], source_path=tmp_path / "workflow.yaml")
+    processor = FakeProcessor()
+    result = PipelineRunner(settings, default_registry(), processor=processor).run(workflow)
+    assert processor.calls == ["overlay"]
+    kind, config, _ = processor.overlay_calls[0]
+    assert kind == "composite"
+    assert config["scale"] == 0.4 and config["x"] == "center" and config["y"] == "center"
+    assert config["mask"] == {"type": "circle", "feather": 40}
+    assert result.output_file == tmp_path / "final.mp4"
+
+
+def test_overlay_step_preserves_legacy_image(settings, tmp_path):
+    source = tmp_path / "source.mp4"; source.write_bytes(b"video")
+    logo = tmp_path / "logo.png"; logo.write_bytes(b"image")
+    workflow = WorkflowDefinition(name="legacy", steps=[
+        WorkflowStep(name="source", options={"path": str(source)}),
+        WorkflowStep(name="overlay", options={"image": "logo.png", "x": 10, "y": 20}),
+        WorkflowStep(name="export", options={"output": "final.mp4"}),
+    ], source_path=tmp_path / "workflow.yaml")
+    processor = FakeProcessor()
+    PipelineRunner(settings, default_registry(), processor=processor).run(workflow)
+    kind, image, options = processor.overlay_calls[0]
+    assert kind == "legacy" and options == {"x": 10, "y": 20}
+
+
+def test_overlay_validation_requires_a_source(tmp_path):
+    bad = WorkflowDefinition(name="bad", steps=[WorkflowStep(name="source", options={"path": "in.mp4"}), WorkflowStep(name="overlay", options={}), WorkflowStep(name="export", options={"output": "o.mp4"})], source_path=tmp_path / "x.yaml")
+    with pytest.raises(PipelineValidationError, match="overlay requires"):
+        validate_workflow(bad, default_registry())
+
+
+def test_overlay_validation_reports_missing_source_file(tmp_path):
+    source = tmp_path / "in.mp4"; source.write_bytes(b"video")
+    missing = WorkflowDefinition(name="missing", steps=[WorkflowStep(name="source", options={"path": str(source)}), WorkflowStep(name="overlay", options={"source": "gone.mp4"}), WorkflowStep(name="export", options={"output": "o.mp4"})], source_path=tmp_path / "x.yaml")
+    with pytest.raises(PipelineValidationError, match="missing file"):
+        validate_workflow(missing, default_registry())
