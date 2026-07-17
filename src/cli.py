@@ -21,6 +21,7 @@ from src.downloader import Downloader
 from src.models import DownloadResult
 from src.exceptions import CashCowError
 from src.logger import get_logger, init_logger
+from src.pipeline import Pipeline, PipelineRunner, default_registry
 from src.validator import (
     initialize_directories,
     validate_dependencies,
@@ -43,6 +44,33 @@ app = typer.Typer(
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
+
+pipeline_app = typer.Typer(help="Validate and run reusable media workflows.")
+app.add_typer(pipeline_app, name="pipeline")
+
+
+@pipeline_app.command("validate", help="Validate a workflow YAML file without executing it.")
+def validate_pipeline(workflow: str = typer.Argument(...), config_file: str = typer.Option(constants.DEFAULT_SETTINGS_FILE, "--config", "-c")):
+    try:
+        from src.pipeline.validator import validate_workflow
+        pipeline = Pipeline.from_yaml(workflow)
+        validate_workflow(pipeline.workflow, default_registry())
+        console.print(f"[success]Workflow '{pipeline.workflow.name}' is valid.[/success]")
+    except Exception as exc:
+        console.print(f"[danger]Workflow validation failed:[/danger] {exc}")
+        raise typer.Exit(code=1)
+
+
+@pipeline_app.command("run", help="Run a workflow YAML file.")
+def run_pipeline(workflow: str = typer.Argument(...), config_file: str = typer.Option(constants.DEFAULT_SETTINGS_FILE, "--config", "-c")):
+    try:
+        settings = load_config(config_file)
+        init_logger(settings.logging.level, settings.logging.log_dir, settings.app.debug)
+        result = PipelineRunner(settings, default_registry()).run(Pipeline.from_yaml(workflow).workflow)
+        console.print(f"[success]Pipeline completed:[/success] {result.output_file}")
+    except Exception as exc:
+        console.print(f"[danger]Pipeline failed:[/danger] {exc}")
+        raise typer.Exit(code=1)
 
 
 @app.command(name="run", help="Initialize and run the base system.")
@@ -417,4 +445,3 @@ def download(
 
 if __name__ == "__main__":
     app()
-

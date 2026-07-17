@@ -53,3 +53,8 @@ download:
   retries: 3
   concurrent_downloads: 2
   overwrite: false
+
+pipeline:
+  workspace: "workspace"
+  cleanup: true
+  retries: 0

@@ -186,6 +186,59 @@ a typed `ProcessingResult`; `inspect()` returns `VideoInfo`. Operations accept o
 
 ---
 
+## 🔁 Workflow pipelines (Phase 4)
+
+`src.pipeline` coordinates the downloader and the existing local-media `Processor`; it
+does not contain FFmpeg commands or downloading logic. Every run receives an isolated
+workspace, records typed step history, retries recoverable failures, and removes its
+intermediate files after success by default. Processing steps always call the Processor
+API rather than constructing commands themselves.
+
+```yaml
+name: shorts_pipeline
+retry:
+  attempts: 3
+steps:
+  - download:
+      url: https://youtube.com/watch?v=example
+  - trim:
+      start: 5
+      end: 45
+  - resize:
+      preset: 1080x1920
+      padding: true
+  - watermark:
+      text: "@mychannel"
+  - thumbnail:
+      second: 12
+  - export:
+      output: output/final.mp4
+```
+
+Validate or run it with:
+
+```bash
+python app.py pipeline validate workflow.yaml
+python app.py pipeline run workflow.yaml
+```
+
+Each `steps` item is a one-key YAML mapping. Built-in names are `download`, `trim`,
+`crop`, `resize`, `rotate`, `overlay`, `watermark`, `subtitles`, `thumbnail`, `concat`,
+`encode`, and `export`. `download` (or a file-based `concat`) must establish input
+media first; `export` is required and must be last. File-valued options such as overlay images and
+subtitle files are resolved relative to the workflow YAML file.
+
+For `resize`, dimension presets include `1080x1920`, `1920x1080`, `1080x1080`,
+`720p`, and `4k`. Pipeline-only platform aliases are also available: `youtube`
+maps to `1920x1080`; `shorts`, `tiktok`, and `instagram` map to `1080x1920`.
+
+To add a custom step, subclass `src.pipeline.steps.base.PipelineStep`, implement
+`validate()` and `execute(context, runner)`, then register it with
+`registry.register("name", YourStep)`. Steps should update `context.current_file` and
+use `runner.processor` for media transformations.
+
+---
+
 ## 🗺️ Future Roadmap
 
 - **Phase 2 (Downloading)**: Implement concurrent video and audio downloading with cookies support using `yt-dlp`.

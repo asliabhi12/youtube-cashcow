@@ -85,6 +85,13 @@ class DownloadConfig(BaseModel):
     overwrite: bool = Field(default=False, description="Overwrite pre-existing outputs")
 
 
+class PipelineConfig(BaseModel):
+    """Defaults used by the workflow orchestration layer."""
+    workspace: str = Field(default="workspace", description="Directory containing per-run workspaces")
+    cleanup: bool = Field(default=True, description="Remove successful run workspaces")
+    retries: int = Field(default=0, ge=0, description="Default retries for recoverable step failures")
+
+
 class Settings(BaseModel):
     """Root configuration model representing the settings.yaml layout."""
     app: AppConfig
@@ -94,6 +101,7 @@ class Settings(BaseModel):
     yt_dlp: YtDlpConfig = Field(default_factory=YtDlpConfig)
     upload: UploadConfig = Field(default_factory=UploadConfig)
     download: DownloadConfig = Field(default_factory=DownloadConfig)
+    pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
 
 
 
