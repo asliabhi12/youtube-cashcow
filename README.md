@@ -1,24 +1,45 @@
 # YouTube CashCow
 
-An automated, scalable, production-grade video processing platform. This repository contains the core foundation (Phase 1) designed to support future workloads such as video downloading, heavy processing, custom transitions, audio mastering, and YouTube uploads.
+A production-grade, modular video automation platform. YouTube CashCow takes a video from source to finished upload-ready output through a single configurable pipeline: downloading, FFmpeg processing, masked compositing, workflow automation, and hardware-accelerated encoding, all with built-in benchmarking.
 
 ## 🚀 Project Overview
 
-YouTube CashCow is designed as a modular pipeline architecture. The goal of Phase 1 is to implement a robust codebase foundation featuring a configuration engine, custom typed logger with Rich support, CLI entry points, and environment verification rules.
+YouTube CashCow is built as a modular pipeline architecture where each subsystem is independent and composable. It combines a robust codebase foundation (typed configuration, Rich-backed logging, a Typer CLI, and environment validation) with a full media stack:
+
+- **Downloading** — concurrent video/audio retrieval with metadata, playlists, and cookie authentication via `yt-dlp`.
+- **Processing** — a local-media FFmpeg façade for trim, crop, resize, rotate, overlay, watermark, subtitles, thumbnails, concat, and audio operations.
+- **Compositing** — masked image/video overlays with feathering, scaling, rotation, and opacity.
+- **Workflow automation** — YAML-defined pipelines with isolated workspaces, retries, validation, and automatic cleanup.
+- **Hardware acceleration** — automatic encoder detection across Apple VideoToolbox, NVIDIA NVENC, and Intel Quick Sync, with a software fallback.
+- **Benchmarking** — encoder, transcode, quality, and end-to-end pipeline profiling with structured JSON reports.
+
+A modern web frontend, interactive editing tools, and YouTube upload automation are on the roadmap.
 
 ## 🏗️ Architecture
 
 ```mermaid
 graph TD
     App[app.py Entrypoint] --> CLI[src/cli.py]
-    CLI --> Config[src/config.py]
-    CLI --> Logger[src/logger.py]
-    CLI --> Validator[src/validator.py]
+
+    CLI --> Config[Configuration<br/>src/config.py]
+    CLI --> Logger[Logging<br/>src/logger.py]
+    CLI --> Validator[System Validator<br/>src/validator.py]
+    CLI --> Pipeline[Workflow Pipeline<br/>src/pipeline]
+    CLI --> Processor[Processing<br/>src/processor]
+    CLI --> Performance[Performance & Benchmarking<br/>src/performance]
+
     Config --> Pydantic[Pydantic Models]
     Config --> Yaml[settings.yaml]
-    Validator --> Utils[src/utils.py]
-    Validator --> Constants[src/constants.py]
-    Validator --> Exceptions[src/exceptions.py]
+
+    Pipeline --> Downloader[Downloader<br/>yt-dlp]
+    Pipeline --> Processor
+
+    Processor --> Compositor[Compositor<br/>masks & overlays]
+    Processor --> Runner[FFmpegRunner<br/>src/processor/runner.py]
+    Compositor --> Runner
+    Performance --> Runner
+
+    Runner --> FFmpeg[FFmpeg / FFprobe]
 ```
 
 The system comprises the following key components:
@@ -26,7 +47,12 @@ The system comprises the following key components:
 - **Configuration Subsystem**: Loads `settings.yaml` and executes rigid schema validation using `Pydantic`.
 - **System Validator**: Runs pre-flight diagnostics assessing Python runtime requirements, dependency existence, folder structure, and access permissions.
 - **Logging Subsystem**: Features colorized console logs (via Rich) alongside rotating, daily file loggers.
+- **Download Subsystem**: `yt-dlp`-backed video/audio retrieval with metadata extraction, playlist support, format selection, and cookie authentication.
 - **Processing Subsystem**: A local-media-only FFmpeg façade for composable trim, transforms, audio, subtitle, thumbnail, and concat operations.
+- **Compositing Subsystem**: Layers masked, feathered, scaled, and rotated image/video overlays onto the base video (`mask.py`, `overlay.py`, `compositor.py`).
+- **Workflow Pipeline**: Coordinates the downloader and processor from YAML definitions with isolated workspaces, retries, validation, and cleanup.
+- **Performance Engine**: Detects hardware encoders, selects the fastest backend with a software fallback, and benchmarks encoder, transcode, quality, and full-pipeline profiles.
+- **FFmpeg Runner**: The single point of FFmpeg/FFprobe execution — every subsystem routes its commands through `src/processor/runner.py`.
 
 ---
 
@@ -394,11 +420,15 @@ and `invert` keeps the outside instead of the inside.
 
 **Overlay configuration.** `position` accepts named anchors (`center`,
 `top_left`, `top_right`, `bottom_left`, `bottom_right`, `top`, `bottom`, `left`,
-`right`) or pixel coordinates. Scaling is either `scale` (a fraction of the base
-width) or explicit `width`/`height` in pixels — not both. `opacity` is an alpha
-multiplier applied after the mask, and `rotation` turns the overlay. Image and
-video overlays use the same configuration; a still image is held for the base's
-full duration automatically.
+`right`) or pixel coordinates. Scaling is either `scale` or explicit
+`width`/`height` in pixels — not both. A fractional `scale` sizes the overlay
+relative to the output frame (cover/fill), not to the overlay's own dimensions:
+`scale: 1.0` fully covers the frame with no black borders, `scale: 0.5` covers
+half the frame, and `scale: 2.0` is twice the frame. Aspect ratio is preserved
+and any excess is cropped. Explicit `width`/`height` remain fixed pixel sizes.
+`opacity` is an alpha multiplier applied after the mask, and `rotation` turns the
+overlay. Image and video overlays use the same configuration; a still image is
+held for the base's full duration automatically.
 
 The programmatic API mirrors the other operations:
 
@@ -428,7 +458,14 @@ will hang the encode.
 
 ## 🗺️ Future Roadmap
 
-- **Phase 2 (Downloading)**: Implement concurrent video and audio downloading with cookies support using `yt-dlp`.
-- **Phase 3 (FFmpeg Processing)**: Introduce wrapper classes around FFmpeg to perform cuts, merges, custom watermark rendering, and overlay masks.
-- **Phase 4 (AI Integration & Voiceover)**: Add auto-caption generators, subtitle generation, and text-to-speech audio rendering.
-- **Phase 5 (YouTube Integration)**: Build automated authentication flows and YouTube Data API v3 upload targets.
+- **Modern Web Frontend** — a browser-based UI for building and running workflows.
+- **Interactive Timeline Editor** — visual, frame-accurate editing on a timeline.
+- **Drag-and-drop trimming** — direct manipulation of clip boundaries.
+- **Visual Workflow Builder** — compose pipeline steps without writing YAML.
+- **Audio Enhancement Engine** — noise reduction, leveling, and mastering.
+- **AI Scene Detection** — automatic shot and scene segmentation.
+- **Auto Caption Generation** — speech-to-text captions and subtitle export.
+- **Batch Processing** — run workflows across many inputs in parallel.
+- **YouTube Upload Automation** — authenticated uploads via the YouTube Data API.
+- **Job Scheduling** — queue and schedule recurring workflow runs.
+- **Plugin System** — third-party steps and integrations through a stable extension API.
