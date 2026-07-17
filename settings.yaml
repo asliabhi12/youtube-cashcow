@@ -1,0 +1,52 @@
+# YouTube CashCow - Configuration Settings
+
+app:
+  name: "YouTube CashCow"
+  version: "1.0.0"
+  debug: true
+
+logging:
+  level: "INFO"
+  console_output: true
+  file_output: true
+  log_dir: "logs"
+
+storage:
+  download_dir: "downloads"
+  temp_dir: "temp"
+  output_dir: "output"
+  assets_dir: "assets"
+
+# Future configurations to be used in later phases
+ffmpeg:
+  path: "ffmpeg"
+  codec: "libx264"
+  preset: "medium"
+  crf: 23
+  audio_codec: "aac"
+  bitrate: "192k"
+
+yt_dlp:
+  format: "bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+  merge_output_format: "mp4"
+  retries: 3
+  rate_limit: null
+
+upload:
+  youtube:
+    privacy_status: "private"
+    made_for_kids: false
+    category_id: "22"
+
+download:
+  quality: "bestvideo+bestaudio"
+  format: "mp4"
+  output_directory: "downloads/"
+  playlist: false
+  write_thumbnail: false
+  write_description: false
+  write_subtitles: false
+  retries: 3
+  concurrent_downloads: 2
+  overwrite: false
+
