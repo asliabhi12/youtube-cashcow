@@ -26,6 +26,7 @@ The system comprises the following key components:
 - **Configuration Subsystem**: Loads `settings.yaml` and executes rigid schema validation using `Pydantic`.
 - **System Validator**: Runs pre-flight diagnostics assessing Python runtime requirements, dependency existence, folder structure, and access permissions.
 - **Logging Subsystem**: Features colorized console logs (via Rich) alongside rotating, daily file loggers.
+- **Processing Subsystem**: A local-media-only FFmpeg façade for composable trim, transforms, audio, subtitle, thumbnail, and concat operations.
 
 ---
 
@@ -151,6 +152,37 @@ storage:
   output_dir: "output"
   assets_dir: "assets"
 ```
+
+---
+
+## 🎬 FFmpeg processing (Phase 3)
+
+The processor is independent of downloading and only accepts local paths. Install both
+`ffmpeg` and `ffprobe` first:
+
+- macOS: `brew install ffmpeg`
+- Ubuntu/Debian: `sudo apt install ffmpeg`
+- Windows: install a current FFmpeg build, then add its `bin` directory to `PATH`.
+
+Configure custom executable paths, command timeout, threads, or optional hardware
+acceleration in the `ffmpeg` block in `settings.yaml`.
+
+```python
+from src.config import load_config
+from src.processor import Processor
+
+processor = Processor(load_config())
+clip = processor.trim("downloads/source.webm", "output/clip.mp4", start=4, end=18)
+vertical = processor.resize(clip.output_file, "output/short.mp4", preset="1080x1920", padding=True)
+processor.watermark(vertical.output_file, "output/branded.mp4", text="@mychannel")
+processor.thumbnail("output/branded.mp4", "output/thumbnail.jpg", timestamp=3)
+```
+
+Available operations include `trim`, `crop`, `resize`, `rotate`, `overlay`,
+`watermark`, `burn_subtitles`, `thumbnail`, `concat`, `extract_audio`,
+`replace_audio`, `mute`, `volume`, and `normalize`. Every successful operation returns
+a typed `ProcessingResult`; `inspect()` returns `VideoInfo`. Operations accept optional
+`progress` callbacks and cancellation events where applicable.
 
 ---
 

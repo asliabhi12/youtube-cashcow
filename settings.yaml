@@ -20,6 +20,10 @@ storage:
 # Future configurations to be used in later phases
 ffmpeg:
   path: "ffmpeg"
+  ffprobe: "ffprobe"
+  timeout: 3600
+  threads: "auto"
+  hwaccel: null
   codec: "libx264"
   preset: "medium"
   crf: 23
@@ -49,4 +53,3 @@ download:
   retries: 3
   concurrent_downloads: 2
   overwrite: false
-

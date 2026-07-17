@@ -37,8 +37,13 @@ class StorageConfig(BaseModel):
 
 
 class FFmpegConfig(BaseModel):
-    """FFmpeg video encoding parameters placeholder configuration."""
+    """FFmpeg executable and default encoding configuration."""
     path: str = Field(default="ffmpeg", description="Path or command to run FFmpeg")
+    executable: Optional[str] = Field(default=None, description="Explicit FFmpeg command; overrides path")
+    ffprobe: str = Field(default="ffprobe", description="Path or command to run FFprobe")
+    timeout: int = Field(default=3600, gt=0, description="Maximum processing time in seconds")
+    threads: str | int = Field(default="auto", description="FFmpeg thread count or auto")
+    hwaccel: Optional[str] = Field(default=None, description="Optional FFmpeg hardware acceleration method")
     codec: str = Field(default="libx264", description="Video codec for rendering")
     preset: str = Field(default="medium", description="FFmpeg speed preset")
     crf: int = Field(default=23, ge=0, le=51, description="Constant Rate Factor quality (0-51)")
