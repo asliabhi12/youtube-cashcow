@@ -3,13 +3,18 @@
 import json
 from pathlib import Path
 from threading import Event
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from src.config import load_config
-from src.performance import Benchmark, BenchmarkProfile, DecoderDetector, EncoderSelector, HardwareBackend, HardwareDetector, PerformanceEncoder, WorkerPool
+from src.performance import Benchmark, BenchmarkProfile, DecoderDetector, EncoderSelector, HardwareBackend, HardwareDetector, PerformanceEncoder, PipelineBenchmark, PipelineTimeline, WorkerPool
 from src.performance.benchmark import DEFAULT_CLIP_SECONDS
 from src.performance.metrics import MetricsCollector
-from src.performance.models import BenchmarkResult, DecoderInfo, EncoderDecision, HardwareCapabilities, PerformanceMetrics
+from src.performance.models import BenchmarkResult, DecoderInfo, EncoderDecision, HardwareCapabilities, PerformanceMetrics, StepTiming
+from src.pipeline import PipelineStepError
+from src.pipeline.models import StepRecord
 from src.processor.models import VideoInfo
 
 
@@ -187,3 +192,163 @@ def test_metrics_speed_fallback_when_ffmpeg_silent(tmp_path):
     report = bench.run(source, profile=BenchmarkProfile.ENCODER, duration=4.0)[0]
     # 4s clip encoded in 2.0s -> 2.0x realtime derived fallback.
     assert report.metrics.encoding_speed == 2.0
+
+
+# --------------------------------------------------------------------------- #
+# Pipeline profile: end-to-end workflow benchmark through the real runner.
+# --------------------------------------------------------------------------- #
+
+
+class _FakePipelineProcessor:
+    """Records step invocations and copies bytes, standing in for FFmpeg work."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def _write(self, name: str, source, output) -> None:
+        self.calls.append(name)
+        Path(output).write_bytes(Path(source).read_bytes())
+
+    def trim(self, source, output, **options): self._write("trim", source, output)
+    def resize(self, source, output, *args, **options): self._write("resize", source, output)
+    def inspect(self, source): return SimpleNamespace(width=1920, height=1080)
+
+
+def _pipeline_settings(tmp_path):
+    settings = load_config("settings.yaml")
+    settings.pipeline.workspace = str(tmp_path / "workspace")
+    settings.pipeline.cleanup = True
+    return settings
+
+
+def _clock(values):
+    """A ResourceMonitor stand-in whose snapshots yield scripted wall times."""
+    monitor = MagicMock()
+    monitor.snapshot.side_effect = [SimpleNamespace(wall_time=v, cpu_time=0.0, memory_bytes=1000) for v in values]
+    return monitor
+
+
+def test_pipeline_timeline_aggregates_step_and_bucket_times():
+    # Scripted wall clock: pipeline start, start/end for four steps, then complete.
+    timeline = PipelineTimeline(monitor=_clock([0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 4.0, 4.0, 4.1, 4.1]))
+    timeline("pipeline_started", None)
+    for name in ("source", "resize", "encode", "export"):
+        timeline("step_started", None, StepRecord(name=name, status="running"))
+        timeline("step_completed", None, StepRecord(name=name, status="completed"))
+    timeline("pipeline_completed", None)
+
+    steps = timeline.step_timings(origin=0.0)
+    assert [s.name for s in steps] == ["source", "resize", "encode", "export"]
+    assert steps[2].name == "encode" and steps[2].duration == 3.0
+    buckets = timeline.bucket_times(origin=0.0, ended=4.5)
+    assert buckets["encoding"] == 3.0          # encode step
+    assert buckets["export"] == 0.1            # export step
+    assert buckets["processing"] == 1.0        # source (0.5) + resize (0.5)
+    assert buckets["cleanup"] == pytest.approx(0.4)  # ended (4.5) - pipeline_completed (4.1)
+
+
+def _pipeline_benchmark(runner, settings, processor, info):
+    return PipelineBenchmark(
+        PerformanceEncoder(runner, settings), probe=_probe_for(info),
+        decoder_detector=DecoderDetector(runner), downloader=SimpleNamespace(), processor=processor,
+    )
+
+
+def test_pipeline_benchmark_runs_through_real_runner(tmp_path):
+    source = tmp_path / "input.mp4"; source.write_bytes(b"source-media")
+    settings = _pipeline_settings(tmp_path)
+    runner = _software_runner()
+    processor = _FakePipelineProcessor()
+    info = VideoInfo(path=source, width=1920, height=1080, fps=30.0, duration=8.0, codec="h264")
+    result = _pipeline_benchmark(runner, settings, processor, info).run(source, duration=5.0)
+
+    assert result.profile is BenchmarkProfile.PIPELINE
+    assert result.pipeline_name == "benchmark_pipeline"
+    # The synthetic workflow drove the real runner through the processor.
+    assert processor.calls == ["trim", "resize", "resize"]  # trim, resize step, encode step
+    names = [step.name for step in result.step_results]
+    assert names == ["source", "trim", "resize", "encode", "export"]
+    # Output lives in a temp dir cleaned up after run(); its size is captured live.
+    assert result.metrics.output_size_bytes > 0
+    assert result.total_pipeline_time is not None and result.total_pipeline_time >= 0
+    assert result.backend is HardwareBackend.SOFTWARE and not result.metrics.hardware_used
+
+
+def test_pipeline_benchmark_bucket_and_step_totals_are_consistent(tmp_path):
+    source = tmp_path / "input.mp4"; source.write_bytes(b"source-media")
+    settings = _pipeline_settings(tmp_path)
+    info = VideoInfo(path=source, width=1280, height=720, fps=24.0, duration=20.0, codec="h264")
+    result = _pipeline_benchmark(_software_runner(), settings, _FakePipelineProcessor(), info).run(source)
+
+    assert result.download_time == 0.0  # no download step in a local-file workflow
+    assert result.resolution == "1280x720"  # probed from the produced output
+    # Every reported step carries non-negative monotonic timing.
+    for step in result.step_results:
+        assert step.duration >= 0 and step.end >= step.start
+        assert step.status == "completed"
+
+
+def test_pipeline_benchmark_reuses_workflow_yaml(tmp_path):
+    media = tmp_path / "clip.mp4"; media.write_bytes(b"clip")
+    workflow_file = tmp_path / "workflow.yaml"
+    workflow_file.write_text(
+        "name: shorts_pipeline\nsteps:\n"
+        f"  - source:\n      path: {media}\n"
+        "  - trim:\n      start: 0\n      end: 2\n"
+        "  - export:\n      output: out.mp4\n"
+    )
+    settings = _pipeline_settings(tmp_path)
+    info = VideoInfo(path=media, width=1920, height=1080, fps=30.0, duration=10.0, codec="h264")
+    result = _pipeline_benchmark(_software_runner(), settings, _FakePipelineProcessor(), info).run(workflow_file)
+
+    assert result.pipeline_name == "shorts_pipeline"
+    assert [step.name for step in result.step_results] == ["source", "trim", "export"]
+
+
+def test_pipeline_benchmark_json_payload_round_trips(tmp_path):
+    source = tmp_path / "input.mp4"; source.write_bytes(b"source-media")
+    settings = _pipeline_settings(tmp_path)
+    info = VideoInfo(path=source, width=1920, height=1080, fps=30.0, duration=6.0, codec="h264")
+    result = _pipeline_benchmark(_software_runner(), settings, _FakePipelineProcessor(), info).run(source, duration=3.0)
+
+    payload = json.loads(json.dumps(result.model_dump(mode="json")))
+    assert payload["profile"] == "pipeline"
+    assert payload["pipeline_name"] == "benchmark_pipeline"
+    assert isinstance(payload["step_results"], list) and payload["step_results"][0]["name"] == "source"
+    assert payload["encoding_time"] is not None and payload["total_pipeline_time"] is not None
+
+
+def test_pipeline_benchmark_propagates_step_failure(tmp_path):
+    source = tmp_path / "input.mp4"; source.write_bytes(b"source-media")
+    settings = _pipeline_settings(tmp_path)
+    processor = _FakePipelineProcessor()
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("trim exploded")
+    processor.trim = boom
+
+    info = VideoInfo(path=source, width=1920, height=1080, fps=30.0, duration=8.0, codec="h264")
+    bench = _pipeline_benchmark(_software_runner(), settings, processor, info)
+    with pytest.raises(PipelineStepError, match="trim"):
+        bench.run(source, duration=2.0)
+
+
+def test_pipeline_benchmark_reports_hardware_backend(tmp_path, monkeypatch):
+    source = tmp_path / "input.mp4"; source.write_bytes(b"source-media")
+    settings = _pipeline_settings(tmp_path)
+    runner = MagicMock()
+
+    def fake_run(args, **kwargs):
+        if "-encoders" in args:
+            return " V..... h264_videotoolbox\n V..... libx264", "", 0.01
+        if "-decoders" in args:
+            return " V..... h264", "", 0.01
+        Path(args[-1]).write_bytes(b"encoded")
+        return "", "fps=120 speed=4.0x", 0.02
+    runner.run.side_effect = fake_run
+    monkeypatch.setattr("src.performance.detector.platform.system", lambda: "Darwin")
+    monkeypatch.setattr("src.performance.detector.platform.machine", lambda: "arm64")
+
+    info = VideoInfo(path=source, width=1920, height=1080, fps=30.0, duration=8.0, codec="h264")
+    result = _pipeline_benchmark(runner, settings, _FakePipelineProcessor(), info).run(source, duration=4.0)
+    assert result.backend is HardwareBackend.VIDEOTOOLBOX and result.metrics.hardware_used

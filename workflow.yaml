@@ -1,18 +1,21 @@
-name: demo
+# `name:` is now optional — the loader derives it from the filename stem.
+# Provide one for a stable, human-readable identifier in reports.
+name: youtube_short
 
 steps:
+  # First step must establish input media: one of download / source / concat.
   - download:
-      url: https://www.youtube.com/watch?v=dQw4w9WgXcQ
+      url: https://www.youtube.com/watch?v=nINIJ1cAbYM
 
   - trim:
-      start: 5
-      end: 15
+      start: 0
+      end: 30
 
   - resize:
-      preset: youtube
+      preset: shorts        # 1080x1920; or give explicit width + height
 
-  - thumbnail:
-      second: 7
+  - encode: {}              # re-encode with settings.yaml defaults (takes no options)
 
+  # Workflow must end with exactly one export.
   - export:
-      output: output/demo.mp4
+      output: output/short.mp4

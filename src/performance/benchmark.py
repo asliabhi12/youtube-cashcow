@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 from .decoder import DecoderDetector
 from .encoder import PerformanceEncoder
 from .models import BenchmarkProfile, BenchmarkResult, DecoderInfo, PerformanceMetrics
+from .pipeline_benchmark import PipelineBenchmark
 from .profiler import EncodingProfiler
 from src.processor.ffprobe import FFprobe
 from src.processor.models import VideoInfo
@@ -26,14 +27,16 @@ DEFAULT_CLIP_SECONDS = 30.0
 class Benchmark:
     """Produce comparable, typed reports for a local media input."""
 
-    def __init__(self, encoder: PerformanceEncoder, probe: FFprobe | None = None, decoder_detector: DecoderDetector | None = None) -> None:
+    def __init__(self, encoder: PerformanceEncoder, probe: FFprobe | None = None, decoder_detector: DecoderDetector | None = None, processor=None) -> None:
         self.encoder = encoder
         self._probe = probe
         self._detector = decoder_detector
+        self._processor = processor
+        self._pipeline: PipelineBenchmark | None = None
 
     @classmethod
     def from_processor(cls, processor) -> "Benchmark":
-        return cls(PerformanceEncoder.from_processor(processor), probe=processor.probe)
+        return cls(PerformanceEncoder.from_processor(processor), probe=processor.probe, processor=processor)
 
     @property
     def probe(self) -> FFprobe:
@@ -46,6 +49,15 @@ class Benchmark:
         if self._detector is None:
             self._detector = DecoderDetector(self.encoder.runner)
         return self._detector
+
+    @property
+    def pipeline(self) -> PipelineBenchmark:
+        if self._pipeline is None:
+            self._pipeline = PipelineBenchmark(
+                self.encoder, probe=self._probe, decoder_detector=self._detector,
+                processor=self._processor,
+            )
+        return self._pipeline
 
     def compare(self, input_file: str | Path, *, software: bool = True, hardware: bool = True) -> list[BenchmarkResult]:
         """Backward-compatible full-file hardware/software comparison."""
@@ -65,11 +77,16 @@ class Benchmark:
         """Benchmark ``input_file`` according to ``profile``.
 
         ``encoder`` isolates encoder throughput on a short clip, ``transcode``
-        measures the full decode + encode pipeline, and ``quality`` compares
-        several presets on the fastest available backend. ``duration`` overrides
-        the profile's default clip length.
+        measures the full decode + encode pipeline, ``quality`` compares several
+        presets on the fastest available backend, and ``pipeline`` runs a full
+        production workflow through the real PipelineRunner. ``duration``
+        overrides the profile's default clip length.
         """
         source = Path(input_file)
+        if profile is BenchmarkProfile.PIPELINE:
+            # Delegate to the workflow benchmark; it runs the real PipelineRunner
+            # and accepts either a media file or a workflow YAML as input.
+            return [self.pipeline.run(source, duration=duration)]
         if not source.is_file():
             raise FileNotFoundError(f"Benchmark input does not exist: {source}")
         info = self.probe.inspect(source)

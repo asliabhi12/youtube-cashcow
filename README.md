@@ -255,6 +255,8 @@ python app.py benchmark input.mp4
 python app.py benchmark input.mp4 --profile encoder --duration 30
 python app.py benchmark input.mp4 --profile transcode
 python app.py benchmark input.mp4 --profile quality --json benchmark.json
+python app.py benchmark input.mp4 --profile pipeline --json pipeline.json
+python app.py benchmark workflow.yaml --profile pipeline
 ```
 
 `hardware` lists compiled FFmpeg encoders. `benchmark` first inspects the input
@@ -272,6 +274,8 @@ Profiles control scope:
   encode pipeline.
 - **`quality`** encodes several presets on the fastest available backend and
   compares output size, elapsed time, and fps.
+- **`pipeline`** runs a complete production workflow end-to-end and answers "how
+  long would a real workflow take?" (see below).
 
 `--duration N` limits every encoder to the same `N`-second clip via FFmpeg's `-t`
 option (clamped to the source length). The structured report shows encoder, decoder,
@@ -279,6 +283,53 @@ preset, elapsed, average fps, speed (x realtime), output size, CPU share, memory
 high-water mark, resolution, and input codec. `--json <file>` writes the full report
 as machine-readable JSON for regression testing. Benchmark outputs are temporary;
 the typed report retains their measured sizes.
+
+#### Pipeline profile
+
+The `pipeline` profile measures a real production workflow rather than a synthetic
+FFmpeg command. It runs the actual `PipelineRunner`, so every step executes exactly
+as in production and all FFmpeg work stays inside `src/processor/runner.py` — the
+benchmark orchestrates existing components and never duplicates processing logic.
+
+```bash
+# Media file: a synthetic source -> trim -> resize -> encode -> export workflow
+python app.py benchmark input.mp4 --profile pipeline --duration 5
+
+# Workflow YAML: your own workflow is reused verbatim
+python app.py benchmark workflow.yaml --profile pipeline --json pipeline.json
+```
+
+Timing is captured by observing the runner's own progress events, not by
+re-implementing timers. Wall clock is split into `init`, `download` (when a
+`download` step is present), `processing`, `encoding`, `export`, and `cleanup`
+buckets, and each executed step reports its start, duration, and status:
+
+```
+Pipeline Benchmark            Step Breakdown
+Pipeline:    benchmark_pipeline    Step     Start    Duration   Status
+Hardware:    videotoolbox          source   0.00 s   0.00 s     completed
+Encoder:     h264_videotoolbox     trim     0.00 s   0.53 s     completed
+Decoder:     Software (h264)       resize   0.53 s   0.49 s     completed
+Resolution:  1920x1080             encode   1.02 s   0.55 s     completed
+Total Time:  1.58 s                export   1.57 s   0.00 s     completed
+Encoding:    0.55 s
+```
+
+`--json <file>` writes the full pipeline report (profile, pipeline name, hardware,
+encoder, decoder, per-bucket timings, and the complete `steps` array with per-step
+timing and status). Serialization stays in the CLI layer.
+
+**Interpreting the result.** `encoding` is the time spent in the encode step alone;
+`processing` covers trim/resize/overlay/watermark/subtitle work; a large gap between
+`total` and the sum of encode + processing points at I/O (download, export) or
+initialization overhead. **Recommended usage:** benchmark the same workflow YAML you
+run in production, keep `--duration` small (a few seconds) for fast iteration, and
+compare the JSON `encoding_time` and `total_time` across encoder or hardware changes.
+
+A media-file input requires no workflow authoring — the benchmark builds an in-memory
+workflow from the existing Pipeline models. Local files can also be fed to any
+workflow through the new `source` step (`source: {path: clip.mp4}`), the offline
+counterpart to `download`.
 
 Tune the behavior in `settings.yaml`:
 

@@ -18,6 +18,7 @@ class BenchmarkProfile(str, Enum):
     ENCODER = "encoder"      # short clip; isolates encoder throughput from decode cost
     TRANSCODE = "transcode"  # full input; measures the complete decode + encode pipeline
     QUALITY = "quality"      # short clip across presets; compares size, time, and fps
+    PIPELINE = "pipeline"    # full production workflow via PipelineRunner; measures end-to-end
 
 
 class HardwareCapabilities(BaseModel):
@@ -77,6 +78,17 @@ class DecoderInfo(BaseModel):
         return f"Software ({self.decoder})" if self.decoder else "Software"
 
 
+class StepTiming(BaseModel):
+    """Wall-clock timing for a single workflow step, taken from runner events."""
+
+    name: str
+    start: float = Field(ge=0)          # seconds relative to pipeline start
+    end: float = Field(ge=0)            # seconds relative to pipeline start
+    duration: float = Field(ge=0)       # end - start
+    status: str = "completed"           # mirrors StepRecord.status
+    error: str | None = None            # populated when the step failed
+
+
 class BenchmarkResult(BaseModel):
     input_file: Path
     output_file: Path
@@ -90,3 +102,14 @@ class BenchmarkResult(BaseModel):
     resolution: str | None = None
     input_codec: str | None = None
     input_duration: float | None = None
+    # Pipeline-profile enrichment (all optional; unset for encoder/transcode/quality).
+    pipeline_name: str | None = None
+    step_results: list[StepTiming] | None = None
+    total_pipeline_time: float | None = None
+    init_time: float | None = None
+    download_time: float | None = None
+    processing_time: float | None = None
+    encoding_time: float | None = None
+    export_time: float | None = None
+    cleanup_time: float | None = None
+    worker_count: int | None = None

@@ -30,15 +30,18 @@ def load_workflow(path: str | Path) -> WorkflowDefinition:
         if not isinstance(options, dict): raise PipelineValidationError(f"Step '{name}' options must be a mapping")
         steps.append(WorkflowStep(name=name, options=options))
     try:
-        return WorkflowDefinition(name=raw.get("name", ""), steps=steps, retry=raw.get("retry"), source_path=source)
+        # A missing/empty/null ``name`` is not an error: fall back to the file
+        # stem, a stable non-empty identifier. Passing "" here instead would
+        # violate WorkflowDefinition's min_length=1 and surface a cryptic error.
+        return WorkflowDefinition(name=raw.get("name") or source.stem, steps=steps, retry=raw.get("retry"), source_path=source)
     except ValidationError as exc:
         raise PipelineValidationError(f"Invalid workflow: {exc}") from exc
 
 
 def validate_workflow(workflow: WorkflowDefinition, registry: StepRegistry) -> None:
     names = [step.name.lower() for step in workflow.steps]
-    if names[0] not in {"download", "concat"}:
-        raise PipelineValidationError("The first step must establish input media ('download' or 'concat')")
+    if names[0] not in {"download", "source", "concat"}:
+        raise PipelineValidationError("The first step must establish input media ('download', 'source', or 'concat')")
     if names.count("download") > 1 or names.count("export") > 1:
         raise PipelineValidationError("A workflow may contain at most one download and one export step")
     if "export" not in names or names[-1] != "export":

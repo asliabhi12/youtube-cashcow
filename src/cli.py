@@ -114,10 +114,90 @@ def _benchmark_report_table(results) -> Table:
     return table
 
 
-@app.command(name="benchmark", help="Benchmark encoding for a local video. Profiles: encoder (short clip), transcode (full file), quality (multi-preset).")
+def _pipeline_report_panel(result) -> Panel:
+    metric = result.metrics
+    body = (
+        f"[bold white]Pipeline:[/bold white] {result.pipeline_name or '-'}\n"
+        f"[bold white]Hardware:[/bold white] {result.backend.value}\n"
+        f"[bold white]Encoder:[/bold white] {result.codec}\n"
+        f"[bold white]Decoder:[/bold white] {result.decoder.label if result.decoder else '-'}\n"
+        f"[bold white]Resolution:[/bold white] {result.resolution or '-'}\n"
+        f"[bold white]Workers:[/bold white] {result.worker_count or '-'}\n"
+        f"[bold white]Total Time:[/bold white] {result.total_pipeline_time or 0:.2f} s\n"
+        f"[bold white]Init:[/bold white] {result.init_time or 0:.2f} s\n"
+        f"[bold white]Download:[/bold white] {result.download_time or 0:.2f} s\n"
+        f"[bold white]Processing:[/bold white] {result.processing_time or 0:.2f} s\n"
+        f"[bold white]Encoding:[/bold white] {result.encoding_time or 0:.2f} s\n"
+        f"[bold white]Export:[/bold white] {result.export_time or 0:.2f} s\n"
+        f"[bold white]Cleanup:[/bold white] {result.cleanup_time or 0:.2f} s\n"
+        f"[bold white]Average FPS:[/bold white] {metric.average_fps or 0:.1f}\n"
+        f"[bold white]Speed:[/bold white] {metric.encoding_speed or 0:.2f}x\n"
+        f"[bold white]Output:[/bold white] {metric.output_size_bytes / 1_000_000:.2f} MB\n"
+        f"[bold white]CPU:[/bold white] {metric.cpu_percent or 0:.1f}%\n"
+        f"[bold white]Memory:[/bold white] {(metric.memory_bytes or 0) / 1_000_000:.1f} MB"
+    )
+    return Panel(body, title="[bold cyan]Pipeline Benchmark[/bold cyan]", border_style="cyan")
+
+
+def _pipeline_steps_table(result) -> Table:
+    table = Table(title="Step Breakdown")
+    for column in ("Step", "Start", "Duration", "Status"):
+        table.add_column(column)
+    for step in result.step_results or []:
+        status = "[green]completed[/green]" if step.status == "completed" else f"[danger]{step.status}[/danger]"
+        table.add_row(step.name, f"{step.start:.2f} s", f"{step.duration:.2f} s", status)
+    return table
+
+
+def _pipeline_json_payload(result) -> dict:
+    """Assemble the machine-readable pipeline report (serialization stays here)."""
+    metric = result.metrics
+    return {
+        "profile": result.profile.value if result.profile else "pipeline",
+        "pipeline_name": result.pipeline_name,
+        "input_file": str(result.input_file),
+        "output_file": str(result.output_file),
+        "hardware": result.backend.value,
+        "encoder": result.codec,
+        "decoder": result.decoder.label if result.decoder else None,
+        "resolution": result.resolution,
+        "worker_count": result.worker_count,
+        "total_time": result.total_pipeline_time,
+        "init_time": result.init_time,
+        "download_time": result.download_time,
+        "processing_time": result.processing_time,
+        "encoding_time": result.encoding_time,
+        "export_time": result.export_time,
+        "cleanup_time": result.cleanup_time,
+        "average_fps": metric.average_fps,
+        "encoding_speed": metric.encoding_speed,
+        "output_size_bytes": metric.output_size_bytes,
+        "cpu_percent": metric.cpu_percent,
+        "memory_bytes": metric.memory_bytes,
+        "steps": [step.model_dump(mode="json") for step in (result.step_results or [])],
+    }
+
+
+def _run_pipeline_benchmark(bench, input_file: str, duration: Optional[float], json_output: Optional[str]) -> None:
+    """Execute and report the end-to-end pipeline profile."""
+    console.print(Panel(
+        f"[bold white]Profile:[/bold white] pipeline\n"
+        f"[bold white]Input:[/bold white] {input_file}\n"
+        f"[bold white]Clip:[/bold white] {f'{duration}s' if duration else '30s (default)'}",
+        title="[bold cyan]Benchmark[/bold cyan]", border_style="cyan",
+    ))
+    result = bench.run(input_file, profile=BenchmarkProfile.PIPELINE, duration=duration)[0]
+    console.print(_pipeline_report_panel(result))
+    console.print(_pipeline_steps_table(result))
+    if json_output:
+        Path(json_output).write_text(json.dumps(_pipeline_json_payload(result), indent=2), encoding="utf-8")
+        console.print(f"[success]Report written to[/success] {json_output}")
+
+
+@app.command(name="benchmark", help="Benchmark encoding or a full workflow for a local video. Profiles: encoder (short clip), transcode (full file), quality (multi-preset), pipeline (end-to-end workflow).")
 def benchmark(
-    input_file: str = typer.Argument(..., help="Path to a local video file to benchmark."),
-    profile: str = typer.Option("encoder", "--profile", "-p", help="encoder | transcode | quality"),
+    input_file: str = typer.Argument(..., help="Path to a local video file (or workflow YAML for --profile pipeline)."),
+    profile: str = typer.Option("encoder", "--profile", "-p", help="encoder | transcode | quality | pipeline"),
     duration: Optional[float] = typer.Option(None, "--duration", "-d", help="Clip length in seconds (overrides the profile default; uses FFmpeg -t)."),
     json_output: Optional[str] = typer.Option(None, "--json", help="Write a machine-readable report to this JSON file."),
     config_file: str = typer.Option(constants.DEFAULT_SETTINGS_FILE, "--config", "-c"),
@@ -130,10 +210,16 @@ def benchmark(
         try:
             selected = BenchmarkProfile(profile.lower())
         except ValueError:
-            raise RuntimeError(f"Unknown profile '{profile}'. Choose encoder, transcode, or quality.")
+            raise RuntimeError(f"Unknown profile '{profile}'. Choose encoder, transcode, quality, or pipeline.")
 
         processor = Processor(settings)
         bench = Benchmark.from_processor(processor)
+
+        # The pipeline profile runs a real workflow (input may be a YAML file, not
+        # a probeable media file), so it uses its own reporting path.
+        if selected is BenchmarkProfile.PIPELINE:
+            _run_pipeline_benchmark(bench, input_file, duration, json_output)
+            return
 
         # Inspect the input and detect the decode path before encoding, so the
         # user sees what is being measured rather than a bare elapsed number.
