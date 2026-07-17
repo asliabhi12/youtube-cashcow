@@ -22,6 +22,8 @@ from src.models import DownloadResult
 from src.exceptions import CashCowError
 from src.logger import get_logger, init_logger
 from src.pipeline import Pipeline, PipelineRunner, default_registry
+from src.performance import Benchmark, HardwareDetector, PerformanceEncoder
+from src.processor import Processor
 from src.validator import (
     initialize_directories,
     validate_dependencies,
@@ -47,6 +49,60 @@ app = typer.Typer(
 
 pipeline_app = typer.Typer(help="Validate and run reusable media workflows.")
 app.add_typer(pipeline_app, name="pipeline")
+
+
+@app.command(name="hardware", help="Detect available FFmpeg hardware encoders.")
+def hardware(config_file: str = typer.Option(constants.DEFAULT_SETTINGS_FILE, "--config", "-c")):
+    try:
+        settings = load_config(config_file)
+        init_logger(settings.logging.level, settings.logging.log_dir, settings.app.debug)
+        processor = Processor(settings)
+        report = HardwareDetector(processor.runner).detect()
+        table = Table(title="Hardware Detection")
+        table.add_column("Property"); table.add_column("Value")
+        table.add_row("Platform", f"{report.platform} ({report.machine})")
+        table.add_row("Preferred backend", report.backend.value)
+        table.add_row("Hardware available", "yes" if report.available else "no")
+        table.add_row("Encoders", ", ".join(report.encoders) or "software fallback only")
+        console.print(table)
+    except Exception as exc:
+        console.print(f"[danger]Hardware detection failed:[/danger] {exc}")
+        raise typer.Exit(code=1)
+
+
+@app.command(name="performance", help="Show active performance policy and detected encoder.")
+def performance(config_file: str = typer.Option(constants.DEFAULT_SETTINGS_FILE, "--config", "-c")):
+    try:
+        settings = load_config(config_file)
+        init_logger(settings.logging.level, settings.logging.log_dir, settings.app.debug)
+        processor = Processor(settings)
+        encoder = PerformanceEncoder.from_processor(processor)
+        decision = encoder.decision()
+        console.print(Panel(f"Backend: [bold]{decision.backend.value}[/bold]\nEncoder: [bold]{decision.encoder}[/bold]\nWorkers: {settings.performance.workers}\nFallback: {settings.performance.fallback}", title="Performance"))
+    except Exception as exc:
+        console.print(f"[danger]Performance report failed:[/danger] {exc}")
+        raise typer.Exit(code=1)
+
+
+@app.command(name="benchmark", help="Benchmark hardware and software encoding for a local video.")
+def benchmark(input_file: str = typer.Argument(...), config_file: str = typer.Option(constants.DEFAULT_SETTINGS_FILE, "--config", "-c")):
+    try:
+        settings = load_config(config_file)
+        if not settings.performance.benchmark:
+            raise RuntimeError("Benchmarks are disabled in performance.benchmark")
+        init_logger(settings.logging.level, settings.logging.log_dir, settings.app.debug)
+        processor = Processor(settings)
+        results = Benchmark.from_processor(processor).compare(input_file)
+        table = Table(title="Encoding Benchmark")
+        for column in ("Backend", "Encoding", "Time", "FPS", "Output", "CPU", "Memory"):
+            table.add_column(column)
+        for result in results:
+            metric = result.metrics
+            table.add_row(result.backend.value, result.codec, f"{metric.duration_seconds:.2f}s", f"{metric.average_fps or 0:.1f}", f"{metric.output_size_bytes / 1_000_000:.2f} MB", f"{metric.cpu_percent or 0:.1f}%", f"{(metric.memory_bytes or 0) / 1_000_000:.1f} MB")
+        console.print(table)
+    except Exception as exc:
+        console.print(f"[danger]Benchmark failed:[/danger] {exc}")
+        raise typer.Exit(code=1)
 
 
 @pipeline_app.command("validate", help="Validate a workflow YAML file without executing it.")

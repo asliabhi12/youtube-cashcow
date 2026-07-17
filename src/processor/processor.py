@@ -25,8 +25,17 @@ class Processor:
         self.logger = get_logger("youtube_cashcow.processor")
         self.runner = FFmpegRunner(executable, config.timeout, self.logger, config.hwaccel)
         self.probe = FFprobe(config.ffprobe, self.logger)
+        self._performance_encoder = None
 
     def _encode(self, profile: str | None = None) -> list[str]:
+        # Kept private so all existing Processor APIs remain unchanged.  The
+        # performance layer only supplies encoding options; this façade still
+        # delegates actual execution to FFmpegRunner through each operation.
+        if self.settings.performance.hardware.lower() != "off":
+            if self._performance_encoder is None:
+                from src.performance.encoder import PerformanceEncoder
+                self._performance_encoder = PerformanceEncoder.from_processor(self)
+            return self._performance_encoder.default_args(profile)
         codec, preset, crf = PRESETS.get(profile or "", (self.settings.ffmpeg.codec, self.settings.ffmpeg.preset, str(self.settings.ffmpeg.crf)))
         args = encoding_args(codec, preset, int(crf), self.settings.ffmpeg.audio_codec)
         threads = self.settings.ffmpeg.threads

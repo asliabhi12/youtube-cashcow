@@ -239,6 +239,46 @@ use `runner.processor` for media transformations.
 
 ---
 
+## ⚡ Performance engine (Phase 5)
+
+The performance layer detects FFmpeg encoders automatically and keeps all FFmpeg
+execution in `src/processor/runner.py`. On Apple Silicon it prefers
+`h264_videotoolbox` (or `hevc_videotoolbox` when requested), then uses NVIDIA NVENC,
+Intel Quick Sync, and finally software `libx264`/`libx265`/`libsvtav1`. Existing
+`Processor` methods do not change; their internal encoding options are selected at
+runtime and retain a software fallback when hardware is unavailable.
+
+```bash
+python app.py hardware
+python app.py performance
+python app.py benchmark input.mp4
+```
+
+`hardware` lists compiled FFmpeg encoders. `benchmark` compares the available
+hardware encoder with software and reports elapsed time, FFmpeg FPS/speed, output
+size, process CPU share, and memory high-water mark. Benchmark outputs are temporary;
+the typed report retains their measured sizes.
+
+Tune the behavior in `settings.yaml`:
+
+```yaml
+performance:
+  hardware: "auto"        # auto, videotoolbox, nvenc, qsv, software
+  workers: "auto"         # CPU-aware pool: available CPUs minus one
+  benchmark: true
+  metrics: true
+  preferred_encoder: "auto"
+  fallback: "software"
+```
+
+Production encoding presets are available as `src.performance.Preset`: `YOUTUBE_1080`,
+`YOUTUBE_4K`, `SHORTS`, `TIKTOK`, `INSTAGRAM`, `ARCHIVE`, and `LOSSLESS`. They carry
+bitrate, audio bitrate, pixel format, GOP, fast-start, threading, and hardware
+preference defaults. Apple VideoToolbox decisions use hardware bitrate/quality options
+and `+faststart`, avoiding CPU encoding whenever the installed FFmpeg exposes it.
+
+---
+
 ## 🗺️ Future Roadmap
 
 - **Phase 2 (Downloading)**: Implement concurrent video and audio downloading with cookies support using `yt-dlp`.

@@ -25,6 +25,8 @@ def files(tmp_path):
 def processor(monkeypatch):
     instance = Processor(load_config("settings.yaml"))
     def fake_run(args, **kwargs):
+        if "-encoders" in args:
+            return " V..... h264_videotoolbox\n V..... libx264", "", .01
         Path(args[-1]).write_bytes(b"processed")
         return "", "", .01
     monkeypatch.setattr(instance.runner, "run", fake_run)

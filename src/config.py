@@ -92,6 +92,17 @@ class PipelineConfig(BaseModel):
     retries: int = Field(default=0, ge=0, description="Default retries for recoverable step failures")
 
 
+class PerformanceConfig(BaseModel):
+    """Hardware encoding and execution defaults for the performance layer."""
+
+    hardware: str = Field(default="auto", description="auto, videotoolbox, nvenc, qsv, or software")
+    workers: str | int = Field(default="auto", description="Worker count or auto")
+    benchmark: bool = Field(default=True, description="Enable benchmark commands")
+    metrics: bool = Field(default=True, description="Collect encoding metrics")
+    preferred_encoder: str = Field(default="auto", description="Preferred FFmpeg encoder or auto")
+    fallback: str = Field(default="software", description="Fallback policy when hardware is unavailable")
+
+
 class Settings(BaseModel):
     """Root configuration model representing the settings.yaml layout."""
     app: AppConfig
@@ -102,6 +113,7 @@ class Settings(BaseModel):
     upload: UploadConfig = Field(default_factory=UploadConfig)
     download: DownloadConfig = Field(default_factory=DownloadConfig)
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
+    performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
 
 
 

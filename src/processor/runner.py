@@ -33,6 +33,7 @@ class FFmpegRunner:
         timeout: int | None = None,
         cancel_event: Event | None = None,
         progress: ProgressCallback | None = None,
+        _allow_software_fallback: bool = True,
     ) -> tuple[str, str, float]:
         """Execute arguments without a shell and return stdout, stderr, elapsed seconds."""
         acceleration = ["-hwaccel", self.hwaccel] if self.hwaccel else []
@@ -64,6 +65,38 @@ class FFmpegRunner:
         if process.returncode:
             detail = stderr.strip()[-1000:] or "FFmpeg returned no diagnostic output"
             self.logger.error("FFmpeg command failed (%s): %s", process.returncode, detail)
+            fallback = _software_fallback_args(args) if _allow_software_fallback else None
+            if fallback:
+                self.logger.warning("Hardware encoder failed; retrying once with software fallback")
+                return self.run(
+                    fallback, timeout=timeout, cancel_event=cancel_event, progress=progress,
+                    _allow_software_fallback=False,
+                )
             raise ProcessingFailedError(f"FFmpeg processing failed: {detail}")
         self.logger.info("FFmpeg command completed in %.2fs", elapsed)
         return stdout, stderr, elapsed
+
+
+def _software_fallback_args(args: Sequence[str]) -> list[str] | None:
+    """Replace a failed hardware video encoder without leaking FFmpeg logic upward."""
+    values = list(map(str, args))
+    try:
+        index = values.index("-c:v") + 1
+    except ValueError:
+        return None
+    replacements = {
+        "h264_videotoolbox": "libx264", "hevc_videotoolbox": "libx265",
+        "h264_nvenc": "libx264", "hevc_nvenc": "libx265", "av1_nvenc": "libsvtav1",
+        "h264_qsv": "libx264", "hevc_qsv": "libx265",
+    }
+    replacement = replacements.get(values[index])
+    if not replacement:
+        return None
+    values[index] = replacement
+    # VideoToolbox's quality knob is not recognized by software encoders.
+    while "-q:v" in values:
+        quality = values.index("-q:v")
+        del values[quality:quality + 2]
+    if "-preset" not in values:
+        values.extend(["-preset", "medium"])
+    return values
