@@ -15,6 +15,7 @@ last multiplies whatever alpha the mask produced, so feathering is preserved.
 
 from threading import Event
 
+from .color import color_chain
 from .encode import execute
 from .mask import mask_filter
 from .models import OverlayConfig
@@ -24,14 +25,21 @@ from .utils import PathLike, input_path
 
 
 def _effects_chain(config: OverlayConfig) -> str:
-    """Build the mask -> rotate -> opacity chain applied to the scaled overlay.
+    """Build the color -> mask -> rotate -> opacity chain on the scaled overlay.
 
     This runs *after* whatever sizing the overlay received, so masks fill and
     rotation turns the final overlay pixels. It is independent of the scaling
     mode: cover-scaling (``scale2ref``) and fixed-pixel scaling both feed their
-    result straight into this chain.
+    result straight into this chain. Selective color grading is applied first so
+    only the overlay's own pixels are recoloured — the base video never sees the
+    grade — and it happens *before* compositing as required. An identity grade
+    contributes nothing.
     """
     parts: list[str] = []
+    if config.color:
+        grade = color_chain(config.color)
+        if grade:
+            parts.append(grade)
     # mask_filter already emits ``format=rgba,geq=...``; without a mask we still
     # need an alpha channel so the opacity multiplier below has something to act on.
     parts.append(mask_filter(config.mask) if config.mask else "format=rgba")

@@ -17,6 +17,8 @@ class ResizeStep(PipelineStep):
     def validate(cls, options):
         if not options.get("preset") and not (options.get("width") and options.get("height")):
             raise ValueError("resize requires 'preset' or both 'width' and 'height'")
+        if "zoom" in options and options["zoom"] < 1.0:
+            raise ValueError(f"resize zoom must be >= 1.0 (got {options['zoom']})")
     def execute(self, context, runner):
         output = context.next_output(self.name)
         options = dict(self.options)

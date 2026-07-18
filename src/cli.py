@@ -127,6 +127,9 @@ def _pipeline_report_panel(result) -> Panel:
         f"[bold white]Init:[/bold white] {result.init_time or 0:.2f} s\n"
         f"[bold white]Download:[/bold white] {result.download_time or 0:.2f} s\n"
         f"[bold white]Processing:[/bold white] {result.processing_time or 0:.2f} s\n"
+        f"[bold white]Audio:[/bold white] {result.audio_time or 0:.2f} s\n"
+        f"[bold white]Color:[/bold white] {result.color_time or 0:.2f} s\n"
+        f"[bold white]Filter Graph:[/bold white] {(result.filter_graph_time or 0) * 1000:.2f} ms\n"
         f"[bold white]Encoding:[/bold white] {result.encoding_time or 0:.2f} s\n"
         f"[bold white]Export:[/bold white] {result.export_time or 0:.2f} s\n"
         f"[bold white]Cleanup:[/bold white] {result.cleanup_time or 0:.2f} s\n"
@@ -166,9 +169,12 @@ def _pipeline_json_payload(result) -> dict:
         "init_time": result.init_time,
         "download_time": result.download_time,
         "processing_time": result.processing_time,
+        "audio_time": result.audio_time,
+        "color_time": result.color_time,
         "encoding_time": result.encoding_time,
         "export_time": result.export_time,
         "cleanup_time": result.cleanup_time,
+        "filter_graph_time": result.filter_graph_time,
         "average_fps": metric.average_fps,
         "encoding_speed": metric.encoding_speed,
         "output_size_bytes": metric.output_size_bytes,

@@ -9,6 +9,7 @@ YouTube CashCow is built as a modular pipeline architecture where each subsystem
 - **Downloading** — concurrent video/audio retrieval with metadata, playlists, and cookie authentication via `yt-dlp`.
 - **Processing** — a local-media FFmpeg façade for trim, crop, resize, rotate, overlay, watermark, subtitles, thumbnails, concat, and audio operations.
 - **Compositing** — masked image/video overlays with feathering, scaling, rotation, and opacity.
+- **Media effects** — a chainable, FFmpeg-only audio-effects engine (pitch, deep voice, chipmunk, volume, echo, bass, treble, normalize, speed) and color-grading engine (brightness, contrast, saturation, gamma, hue, temperature, tint, vibrance), including selective grading of individual overlays.
 - **Workflow automation** — YAML-defined pipelines with isolated workspaces, retries, validation, and automatic cleanup.
 - **Hardware acceleration** — automatic encoder detection across Apple VideoToolbox, NVIDIA NVENC, and Intel Quick Sync, with a software fallback.
 - **Benchmarking** — encoder, transcode, quality, and end-to-end pipeline profiling with structured JSON reports.
@@ -35,8 +36,10 @@ graph TD
     Pipeline --> Processor
 
     Processor --> Compositor[Compositor<br/>masks & overlays]
+    Processor --> Effects[Media Effects<br/>audio & color builders]
     Processor --> Runner[FFmpegRunner<br/>src/processor/runner.py]
     Compositor --> Runner
+    Effects --> Runner
     Performance --> Runner
 
     Runner --> FFmpeg[FFmpeg / FFprobe]
@@ -50,6 +53,7 @@ The system comprises the following key components:
 - **Download Subsystem**: `yt-dlp`-backed video/audio retrieval with metadata extraction, playlist support, format selection, and cookie authentication.
 - **Processing Subsystem**: A local-media-only FFmpeg façade for composable trim, transforms, audio, subtitle, thumbnail, and concat operations.
 - **Compositing Subsystem**: Layers masked, feathered, scaled, and rotated image/video overlays onto the base video (`mask.py`, `overlay.py`, `compositor.py`).
+- **Media Effects Subsystem**: FFmpeg-only, registry-driven audio (`audio.py`) and color (`color.py`) builders that return filter fragments the Processor assembles; effects are chainable, fully typed, and identity operations are elided so no wasted filters are emitted.
 - **Workflow Pipeline**: Coordinates the downloader and processor from YAML definitions with isolated workspaces, retries, validation, and cleanup.
 - **Performance Engine**: Detects hardware encoders, selects the fastest backend with a software fallback, and benchmarks encoder, transcode, quality, and full-pipeline profiles.
 - **FFmpeg Runner**: The single point of FFmpeg/FFprobe execution — every subsystem routes its commands through `src/processor/runner.py`.
@@ -249,11 +253,12 @@ python app.py pipeline validate workflow.yaml
 python app.py pipeline run workflow.yaml
 ```
 
-Each `steps` item is a one-key YAML mapping. Built-in names are `download`, `trim`,
-`crop`, `resize`, `rotate`, `overlay`, `watermark`, `subtitles`, `thumbnail`, `concat`,
-`encode`, and `export`. `download` (or a file-based `concat`) must establish input
-media first; `export` is required and must be last. File-valued options such as overlay images and
-subtitle files are resolved relative to the workflow YAML file.
+Each `steps` item is a one-key YAML mapping. Built-in names are `download`, `source`,
+`trim`, `crop`, `resize`, `rotate`, `overlay`, `watermark`, `subtitles`, `thumbnail`,
+`concat`, `encode`, `audio_effect`, `color_effect`, and `export`. `download`, `source`,
+(or a file-based `concat`) must establish input media first; `export` is required and
+must be last. File-valued options such as overlay images and subtitle files are resolved
+relative to the workflow YAML file.
 
 For `resize`, dimension presets include `1080x1920`, `1920x1080`, `1080x1080`,
 `720p`, and `4k`. Pipeline-only platform aliases are also available: `youtube`
@@ -453,6 +458,127 @@ Overlay time appears as its own line in the pipeline benchmark's step breakdown
 image overlays in `-loop`/`-shortest`: the `overlay` filter already repeats the
 last overlay frame for the base's duration, and an unbounded looped image stream
 will hang the encode.
+
+---
+
+## 🎚️ Media effects engine (Phase 7)
+
+The media effects engine adds FFmpeg-only audio processing and color grading. It
+keeps the existing chain — `Pipeline → Processor → Audio/Color builders →
+FFmpegRunner` — so every command still executes only inside
+`src/processor/runner.py`. There are **no AI models**; every effect is a plain
+FFmpeg filter. Two concerns stay isolated: `audio.py` builds `-af` fragments and
+`color.py` builds `-vf` fragments, both through small registries the Processor
+assembles. Builders only produce strings; nothing there runs a command.
+
+### Audio effects
+
+Add an `audio_effect` step with either a single inline effect or an `effects`
+chain. Effects apply left to right.
+
+```yaml
+steps:
+  - source:
+      path: input.mp4
+
+  # single effect
+  - audio_effect:
+      type: pitch
+      semitones: 2
+
+  # chained effects
+  - audio_effect:
+      effects:
+        - type: normalize
+        - type: bass
+        - type: volume
+          gain: 4
+
+  - export:
+      output: output/final.mp4
+```
+
+Supported types and their knobs:
+
+| Type | Knob | FFmpeg filter |
+| --- | --- | --- |
+| `pitch` | `semitones` (-24..24) | `asetrate`+`aresample`+`atempo` (duration preserved) |
+| `deep_voice` | *(none; preset pitch)* | pitch shift down |
+| `chipmunk` | *(none; preset pitch)* | pitch shift up |
+| `volume` | `gain` dB (-60..60) | `volume` |
+| `echo` | `delay` ms, `decay` (0..1) | `aecho` |
+| `bass` | `gain` dB (-60..60) | `bass` |
+| `treble` | `gain` dB (-60..60) | `treble` |
+| `normalize` | *(none)* | `loudnorm` |
+| `speed` | `factor` (0.5..100) | `atempo` chain |
+
+`speed` decomposes any factor into a product of in-range `atempo` stages (each
+0.5–2.0), so large speed changes stay valid.
+
+### Color effects
+
+Add a `color_effect` step. Every knob defaults to its identity value, so only the
+knobs you set are emitted.
+
+```yaml
+steps:
+  - source:
+      path: input.mp4
+  - color_effect:
+      brightness: 0.05
+      contrast: 1.2
+      saturation: 1.3
+  - export:
+      output: output/final.mp4
+```
+
+| Knob | Range | FFmpeg filter |
+| --- | --- | --- |
+| `brightness` | -1..1 | `eq` |
+| `contrast` | 0..3 | `eq` |
+| `saturation` | 0..3 | `eq` |
+| `gamma` | 0..10 | `eq` |
+| `hue` | -360..360 | `hue` |
+| `temperature` | -1..1 (warm/cool) | `colorbalance` |
+| `tint` | -1..1 (green/magenta) | `colorbalance` |
+| `vibrance` | -2..2 | `vibrance` |
+
+`brightness`/`contrast`/`saturation`/`gamma` collapse into a single `eq` node.
+
+### Selective color grading (overlays)
+
+An `overlay` step accepts an optional `color` block. The grade is applied to the
+overlay's own pixels **before** compositing, so only the overlay is recoloured
+and the base video is untouched.
+
+```yaml
+  - overlay:
+      source: assets/overlays/logo.png
+      scale: 0.4
+      color:
+        brightness: 0.1
+        saturation: 1.4
+        hue: 20
+```
+
+### Programmatic API
+
+```python
+from src.processor import Processor, AudioEffectConfig, ColorEffectConfig
+
+processor = Processor(load_config())
+processor.apply_audio_effect("in.mp4", "out.mp4", {"effects": [{"type": "normalize"}, {"type": "bass"}]})
+processor.apply_color_effect("in.mp4", "graded.mp4", {"saturation": 1.3, "hue": 15})
+```
+
+**Performance notes.** Identity operations are elided: a `volume` of 0 dB, a
+`speed` of 1.0, a `pitch` of 0 semitones, and any color knob left at its neutral
+value contribute no filter. An all-identity chain produces an empty filter graph,
+and the pipeline step skips FFmpeg entirely rather than emitting a pointless
+re-encode. The pipeline benchmark reports dedicated `audio` and `color` timing
+buckets plus a `filter_graph_time` (the pure-Python cost of turning effect
+configs into filter strings, isolated from the encode cost); all three appear in
+the `--json` report.
 
 ---
 

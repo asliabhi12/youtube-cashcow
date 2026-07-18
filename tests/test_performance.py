@@ -385,3 +385,34 @@ def test_pipeline_benchmark_reports_hardware_backend(tmp_path, monkeypatch):
     info = VideoInfo(path=source, width=1920, height=1080, fps=30.0, duration=8.0, codec="h264")
     result = _pipeline_benchmark(runner, settings, _FakePipelineProcessor(), info).run(source, duration=4.0)
     assert result.backend is HardwareBackend.VIDEOTOOLBOX and result.metrics.hardware_used
+
+
+class _FakeEffectProcessor(_FakePipelineProcessor):
+    """Adds effect operations so a workflow with audio/color steps can run."""
+
+    def apply_audio_effect(self, source, output, config, **options): self._write("audio_effect", source, output)
+    def apply_color_effect(self, source, output, config, **options): self._write("color_effect", source, output)
+
+
+def test_pipeline_benchmark_buckets_audio_and_color_and_filter_graph(tmp_path):
+    media = tmp_path / "clip.mp4"; media.write_bytes(b"clip")
+    workflow_file = tmp_path / "workflow.yaml"
+    workflow_file.write_text(
+        "name: effects_pipeline\nsteps:\n"
+        f"  - source:\n      path: {media}\n"
+        "  - audio_effect:\n      type: normalize\n"
+        "  - color_effect:\n      saturation: 1.2\n"
+        "  - export:\n      output: out.mp4\n"
+    )
+    settings = _pipeline_settings(tmp_path)
+    info = VideoInfo(path=media, width=1920, height=1080, fps=30.0, duration=10.0, codec="h264")
+    result = _pipeline_benchmark(_software_runner(), settings, _FakeEffectProcessor(), info).run(workflow_file)
+
+    assert [step.name for step in result.step_results] == ["source", "audio_effect", "color_effect", "export"]
+    # The new buckets are populated and filter-graph generation was measured.
+    assert result.audio_time is not None and result.audio_time >= 0
+    assert result.color_time is not None and result.color_time >= 0
+    assert result.filter_graph_time is not None and result.filter_graph_time >= 0
+    # JSON payload carries the new fields.
+    payload = json.loads(json.dumps(result.model_dump(mode="json")))
+    assert "audio_time" in payload and "color_time" in payload and "filter_graph_time" in payload

@@ -26,7 +26,8 @@ from src.processor.models import VideoInfo
 DEFAULT_CLIP_SECONDS = 30.0
 
 # Step name -> timing bucket. Anything unmapped is aggregated as processing.
-_BUCKETS = {"download": "download", "encode": "encoding", "export": "export"}
+_BUCKETS = {"download": "download", "encode": "encoding", "export": "export",
+            "audio_effect": "audio", "color_effect": "color"}
 
 
 class PipelineTimeline:
@@ -77,7 +78,7 @@ class PipelineTimeline:
 
     def bucket_times(self, origin: float, ended: float) -> dict[str, float]:
         """Aggregate wall time into init/download/processing/encoding/export/cleanup."""
-        buckets = {name: 0.0 for name in ("init", "download", "processing", "encoding", "export", "cleanup")}
+        buckets = {name: 0.0 for name in ("init", "download", "processing", "audio", "color", "encoding", "export", "cleanup")}
         first_start = self.steps[0]["start"] if self.steps else self.pipeline_started
         if first_start is not None:
             buckets["init"] = max(0.0, round(first_start - origin, 4))
@@ -130,13 +131,44 @@ class PipelineBenchmark:
             timeline = PipelineTimeline()
             runner = PipelineRunner(self.settings, self.registry, downloader=self.downloader,
                                     processor=self.processor, progress=timeline)
+            filter_graph_time = self._measure_filter_graph(workflow)
             monitor = ResourceMonitor()
             start_snap = monitor.snapshot()
             result = runner.run(workflow)
             end_snap = monitor.snapshot()
             cpu = monitor.cpu_percent(start_snap, end_snap)
             return self._build_result(source, media, result, timeline, start_snap.wall_time,
-                                      end_snap.wall_time, duration, cpu, end_snap.memory_bytes)
+                                      end_snap.wall_time, duration, cpu, end_snap.memory_bytes,
+                                      filter_graph_time)
+
+    @staticmethod
+    def _measure_filter_graph(workflow: WorkflowDefinition) -> float:
+        """Time filter-graph *generation* for the effect steps (no FFmpeg).
+
+        This isolates the pure-Python cost of turning effect configs into FFmpeg
+        filter strings from the encode cost that dominates the wall clock. It
+        reuses the exact builders the steps use, so it never duplicates FFmpeg
+        logic; unrelated steps contribute nothing.
+        """
+        from time import perf_counter
+
+        from src.processor.audio import effect_chain
+        from src.processor.color import color_chain
+        from src.processor.models import AudioEffectConfig, ColorEffectConfig
+
+        started = perf_counter()
+        for step in workflow.steps:
+            name = step.name.lower()
+            try:
+                if name == "audio_effect":
+                    effect_chain(AudioEffectConfig(**step.options))
+                elif name == "color_effect":
+                    color_chain(ColorEffectConfig(**step.options))
+            except Exception:
+                # Generation timing is best-effort; malformed configs are caught
+                # by validation during the real run, not here.
+                continue
+        return round(perf_counter() - started, 6)
 
     def _resolve_workflow(self, source: Path, duration: float | None, export_target: Path,
                           is_workflow: bool) -> tuple[WorkflowDefinition, Path | None]:
@@ -161,7 +193,8 @@ class PipelineBenchmark:
         return WorkflowDefinition(name="benchmark_pipeline", steps=steps, source_path=source)
 
     def _build_result(self, source: Path, media: Path | None, result, timeline: PipelineTimeline,
-                       started: float, ended: float, duration: float | None, cpu: float, memory: int) -> BenchmarkResult:
+                       started: float, ended: float, duration: float | None, cpu: float, memory: int,
+                       filter_graph_time: float = 0.0) -> BenchmarkResult:
         total = round(ended - started, 4)
         buckets = timeline.bucket_times(started, ended)
         output = Path(result.output_file) if result.output_file else None
@@ -186,9 +219,9 @@ class PipelineBenchmark:
             input_duration=in_info.duration if in_info else None,
             pipeline_name=result.name, step_results=timeline.step_timings(started),
             total_pipeline_time=total, init_time=buckets["init"], download_time=buckets["download"],
-            processing_time=buckets["processing"], encoding_time=buckets["encoding"],
-            export_time=buckets["export"], cleanup_time=buckets["cleanup"],
-            worker_count=self._worker_count(),
+            processing_time=buckets["processing"], audio_time=buckets["audio"], color_time=buckets["color"],
+            encoding_time=buckets["encoding"], export_time=buckets["export"], cleanup_time=buckets["cleanup"],
+            filter_graph_time=filter_graph_time, worker_count=self._worker_count(),
         )
 
     def _safe_probe(self, media: Path | None) -> VideoInfo | None:

@@ -6,10 +6,10 @@ from typing import Callable
 from src.config import Settings
 from src.logger import get_logger
 
-from . import audio, compositor, concat, crop, overlay, resize, rotate, subtitles, thumbnail, trim, watermark
+from . import audio, color, compositor, concat, crop, overlay, resize, rotate, subtitles, thumbnail, trim, watermark
 from .encode import PRESETS, encoding_args
 from .ffprobe import FFprobe
-from .models import OverlayConfig, ProcessingResult, VideoInfo
+from .models import AudioEffectConfig, ColorEffectConfig, OverlayConfig, ProcessingResult, VideoInfo
 from .runner import FFmpegRunner
 
 ProgressCallback = Callable[[float], None]
@@ -67,3 +67,9 @@ class Processor:
     def mute(self, input_file: str, output_file: str, **kwargs) -> ProcessingResult: return audio.audio_filter(self.runner, input_file, output_file, "volume=0", encode=self._encode(), **kwargs)
     def volume(self, input_file: str, output_file: str, factor: float, **kwargs) -> ProcessingResult: return audio.audio_filter(self.runner, input_file, output_file, f"volume={factor}", encode=self._encode(), **kwargs)
     def normalize(self, input_file: str, output_file: str, **kwargs) -> ProcessingResult: return audio.audio_filter(self.runner, input_file, output_file, "loudnorm", encode=self._encode(), **kwargs)
+    def apply_audio_effect(self, input_file: str, output_file: str, config: AudioEffectConfig | dict, **kwargs) -> ProcessingResult:
+        effect_config = config if isinstance(config, AudioEffectConfig) else AudioEffectConfig(**config)
+        return audio.apply_effects(self.runner, input_file, output_file, effect_config, encode=self._encode(), **kwargs)
+    def apply_color_effect(self, input_file: str, output_file: str, config: ColorEffectConfig | dict, **kwargs) -> ProcessingResult:
+        color_config = config if isinstance(config, ColorEffectConfig) else ColorEffectConfig(**config)
+        return color.apply_color(self.runner, input_file, output_file, color_config, encode=self._encode(), **kwargs)

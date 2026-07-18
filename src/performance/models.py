@@ -109,7 +109,10 @@ class BenchmarkResult(BaseModel):
     init_time: float | None = None
     download_time: float | None = None
     processing_time: float | None = None
+    audio_time: float | None = None          # time in audio_effect steps
+    color_time: float | None = None          # time in color_effect steps
     encoding_time: float | None = None
     export_time: float | None = None
     cleanup_time: float | None = None
+    filter_graph_time: float | None = None   # pure-Python filter-graph generation cost
     worker_count: int | None = None
