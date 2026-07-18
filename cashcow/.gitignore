@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+next-env.d.ts
+
+# Build & logs
+dist/
+build/
+*.log
+npm-debug.log*
+
+# Runtime media (folders are tracked via .gitkeep, contents are not)
+downloads/*
+output/*
+!downloads/.gitkeep
+!output/.gitkeep
+
+# Env & editor
+.env
+.env.local
+.DS_Store
+.vscode/
+.idea/

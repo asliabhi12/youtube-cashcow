@@ -1,0 +1,16 @@
+{
+  "name": "cashcow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CashCow — local-first video automation. Monorepo root (FastAPI backend + Next.js dashboard).",
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "cd backend && python -m uvicorn app.main:app --reload --port 8000",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "lint:frontend": "cd frontend && npm run lint"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
