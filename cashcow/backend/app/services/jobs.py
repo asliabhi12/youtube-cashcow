@@ -9,6 +9,7 @@ from threading import Lock
 from uuid import uuid4
 
 from app.models.job import Job, JobStatus
+from app.services.job_logs import job_log_hub
 
 
 class JobStore:
@@ -45,9 +46,14 @@ class JobStore:
             return self._jobs.get(job_id)
 
     def delete(self, job_id: str) -> bool:
-        """Remove a job. Return True if it existed, False otherwise."""
+        """Remove a job and its logs. Return True if it existed, False otherwise."""
         with self._lock:
-            return self._jobs.pop(job_id, None) is not None
+            existed = self._jobs.pop(job_id, None) is not None
+        if existed:
+            # Drop the job's log history and drop any live subscribers so the
+            # logs do not outlive the job they describe.
+            job_log_hub.clear(job_id)
+        return existed
 
     def set_status(
         self,

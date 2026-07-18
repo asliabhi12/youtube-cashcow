@@ -10,6 +10,22 @@ from pydantic import BaseModel, Field
 # "completed" or "failed" once the pipeline finishes.
 JobStatus = Literal["pending", "running", "completed", "failed"]
 
+# Severity of a per-job log entry. INFO for normal progress, WARNING for
+# recoverable issues (e.g. a retried step), ERROR when the job fails.
+JobLogLevel = Literal["INFO", "WARNING", "ERROR"]
+
+
+class JobLogEntry(BaseModel):
+    """A single high-level log line for a job's workflow execution.
+
+    Produced by the adapter (not the engine) as the workflow starts, completes,
+    or fails a stage, and streamed to the UI so users can watch progress live.
+    """
+
+    timestamp: datetime
+    level: JobLogLevel
+    message: str
+
 
 class JobCreate(BaseModel):
     """Request body for POST /jobs."""
