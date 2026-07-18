@@ -10,7 +10,23 @@ import pytest
 
 from src.config import load_config
 from src.processor import InvalidMediaError, Processor, UnsupportedCodecError
+from src.processor.encode import encoding_args
 from src.processor.ffprobe import FFprobe
+
+
+def test_encoding_args_crf_mode_by_default():
+    args = encoding_args("auto", "medium", 23, "aac", audio_bitrate="192k")
+    assert args[:2] == ["-c:v", "libx264"]  # "auto" resolves to software libx264
+    assert "-crf" in args and args[args.index("-crf") + 1] == "23"
+    assert "-b:v" not in args
+    assert args[args.index("-b:a") + 1] == "192k"
+
+
+def test_encoding_args_bitrate_mode_suppresses_crf():
+    args = encoding_args("libx264", "medium", 23, "aac", audio_bitrate="128k", video_bitrate="6M")
+    assert args[args.index("-b:v") + 1] == "6M"
+    assert "-crf" not in args and "-preset" not in args
+    assert args[args.index("-b:a") + 1] == "128k"
 
 
 @pytest.fixture

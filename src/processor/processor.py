@@ -37,7 +37,11 @@ class Processor:
                 self._performance_encoder = PerformanceEncoder.from_processor(self)
             return self._performance_encoder.default_args(profile)
         codec, preset, crf = PRESETS.get(profile or "", (self.settings.ffmpeg.codec, self.settings.ffmpeg.preset, str(self.settings.ffmpeg.crf)))
-        args = encoding_args(codec, preset, int(crf), self.settings.ffmpeg.audio_codec)
+        args = encoding_args(
+            codec, preset, int(crf), self.settings.ffmpeg.audio_codec,
+            audio_bitrate=self.settings.ffmpeg.audio_bitrate,
+            video_bitrate=self.settings.ffmpeg.video_bitrate,
+        )
         threads = self.settings.ffmpeg.threads
         if threads != "auto": args += ["-threads", str(threads)]
         return args

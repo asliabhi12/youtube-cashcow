@@ -2,26 +2,25 @@ name: youtube_short_masked
 
 steps:
   - download:
-      url: https://www.youtube.com/watch?v=nINIJ1cAbYM
+      url: https://www.youtube.com/watch?v=aWOggDZHLd4
 
   - trim:
-      start: 0
-      end: 30
+      start: 10
+      end: 2541.0
 
   - resize:
       preset: shorts
 
   - overlay:
-      source: assets/overlays/over.jpg
+      source: assets/overlays/yellow.jpg
       position:
         x: center
         y: center
-      scale: 1.0
+      scale: 1.3
       opacity: 1.0
-      rotation: 0
       mask:
         type: ellipse
-        feather: 100
+        feather: 60
         invert: true
 
   - encode: {}

@@ -95,12 +95,27 @@ class PerformanceEncoder:
         return chosen
 
     def default_args(self, profile: str | None = None) -> list[str]:
-        return self.args_for(self.decision(profile), audio_bitrate=self.settings.ffmpeg.bitrate)
+        return self.args_for(
+            self.decision(profile),
+            audio_bitrate=self.settings.ffmpeg.audio_bitrate,
+            video_bitrate=self.settings.ffmpeg.video_bitrate,
+        )
 
     @staticmethod
-    def args_for(decision: EncoderDecision, *, audio_codec: str = "aac", audio_bitrate: str = "192k", threads: str | int = "auto") -> list[str]:
+    def args_for(
+        decision: EncoderDecision,
+        *,
+        audio_codec: str = "aac",
+        audio_bitrate: str = "192k",
+        video_bitrate: str | None = None,
+        threads: str | int = "auto",
+    ) -> list[str]:
         args = ["-c:v", decision.encoder, "-pix_fmt", decision.pixel_format, "-g", str(decision.gop)]
-        if decision.hardware:
+        if video_bitrate:
+            # An explicit target bitrate wins on every backend: emit -b:v and
+            # never CRF (the two are mutually exclusive rate-control modes).
+            args += ["-b:v", video_bitrate]
+        elif decision.hardware:
             if decision.bitrate:
                 args += ["-b:v", decision.bitrate]
             # Quality value is a CRF-like knob supported by VideoToolbox.
@@ -121,7 +136,7 @@ class PerformanceEncoder:
         # ``-t`` limits the output duration so every encoder processes an
         # identical clip; execution still runs through FFmpegRunner unchanged.
         limit = ["-t", str(duration)] if duration and duration > 0 else []
-        args = ["-i", str(input_file), *limit, *self.args_for(decision, audio_bitrate=self.settings.ffmpeg.bitrate, threads=self.settings.ffmpeg.threads), "-y", str(output)]
+        args = ["-i", str(input_file), *limit, *self.args_for(decision, audio_bitrate=self.settings.ffmpeg.audio_bitrate, video_bitrate=self.settings.ffmpeg.video_bitrate, threads=self.settings.ffmpeg.threads), "-y", str(output)]
         _, stderr, elapsed = self.runner.run(args)
         if not output.is_file() or output.stat().st_size == 0:
             raise ProcessingFailedError(f"FFmpeg completed but did not create a valid output: {output}")

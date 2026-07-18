@@ -17,18 +17,29 @@ storage:
   output_dir: "output"
   assets_dir: "assets"
 
-# Future configurations to be used in later phases
 ffmpeg:
   path: "ffmpeg"
   ffprobe: "ffprobe"
   timeout: 3600
   threads: "auto"
-  hwaccel: null
-  codec: "libx264"
+
+  # Hardware decoding
+  hwaccel: "videotoolbox"
+
+  # Hardware encoder
+  codec: "h264_videotoolbox"
+
+  # Ignored in bitrate mode, kept for CRF fallback
   preset: "medium"
+
+  # Used only if video_bitrate is null
   crf: 23
+
+  # Fast hardware bitrate encoding
+  video_bitrate: "4000k"
+
   audio_codec: "aac"
-  bitrate: "192k"
+  audio_bitrate: "192k"
 
 yt_dlp:
   format: "bestvideo[height<=1080]+bestaudio/best[height<=1080]"

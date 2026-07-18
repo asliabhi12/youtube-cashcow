@@ -7,7 +7,9 @@ from .runner import FFmpegRunner, ProgressCallback
 from .utils import PathLike, output_path
 
 
-CODECS = {"h264": "libx264", "h265": "libx265", "av1": "libaom-av1"}
+# "auto" resolves to libx264 on the software path; hardware selection happens in
+# the performance layer, so the CPU fallback always has a concrete encoder.
+CODECS = {"auto": "libx264", "h264": "libx264", "h265": "libx265", "av1": "libaom-av1"}
 PRESETS = {
     "youtube": ("libx264", "medium", "23"),
     "shorts": ("libx264", "medium", "23"),
@@ -16,9 +18,27 @@ PRESETS = {
 }
 
 
-def encoding_args(codec: str, preset: str, crf: int, audio_codec: str) -> list[str]:
-    """Return consistent encode options for file-producing operations."""
-    return ["-c:v", CODECS.get(codec, codec), "-preset", preset, "-crf", str(crf), "-c:a", audio_codec]
+def encoding_args(
+    codec: str,
+    preset: str,
+    crf: int,
+    audio_codec: str,
+    *,
+    audio_bitrate: str = "192k",
+    video_bitrate: str | None = None,
+) -> list[str]:
+    """Return consistent encode options for file-producing operations.
+
+    A non-null ``video_bitrate`` selects bitrate rate-control (``-b:v``) and
+    suppresses CRF; otherwise CRF mode is used exactly as before.
+    """
+    args = ["-c:v", CODECS.get(codec, codec)]
+    if video_bitrate:
+        args += ["-b:v", video_bitrate]
+    else:
+        args += ["-preset", preset, "-crf", str(crf)]
+    args += ["-c:a", audio_codec, "-b:a", audio_bitrate]
+    return args
 
 
 def execute(

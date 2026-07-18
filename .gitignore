@@ -1,15 +1,19 @@
-# Python gitignore
+# ==========================
+# Python
+# ==========================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+
+# Build / Packaging
 build/
-develop-eggs/
 dist/
+develop-eggs/
 downloads/
 eggs/
-.lib/
+.eggs/
 lib/
 lib64/
 parts/
@@ -22,24 +26,101 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Environments
+# ==========================
+# Virtual Environments
+# ==========================
 .env
-.venv
-env/
+.env.*
+.venv/
 venv/
+env/
 ENV/
 env.bak/
 venv.bak/
 
+# ==========================
+# Python Tooling
+# ==========================
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# ==========================
 # Logs
+# ==========================
 logs/
 *.log
 
-# Temporary files and outputs
-temp/
+# ==========================
+# Generated Media
+# ==========================
 output/
+downloads/
+temp/
+workspace/
+benchmark/
 
-# IDE files
+# Ignore generated media files everywhere
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.m4v
+*.wav
+*.mp3
+*.aac
+*.flac
+
+# Ignore generated images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+
+# Keep sample assets (optional)
+!assets/**
+!tests/assets/**
+
+# ==========================
+# Benchmark Results
+# ==========================
+*.json.benchmark
+benchmark_results/
+profile/
+.prof
+
+# ==========================
+# FFmpeg Temp Files
+# ==========================
+*.ts
+*.part
+*.tmp
+
+# ==========================
+# IDE
+# ==========================
 .vscode/
 .idea/
+*.code-workspace
+
+# ==========================
+# macOS
+# ==========================
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# ==========================
+# Misc
+# ==========================
+*.swp
+*.swo
+*~
+.cache/

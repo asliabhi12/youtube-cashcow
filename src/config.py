@@ -7,7 +7,7 @@ Raises custom exceptions for validation errors.
 from pathlib import Path
 from typing import Any, Optional
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError
 
 from src.exceptions import ConfigurationError
 from src.utils import resolve_path
@@ -38,17 +38,27 @@ class StorageConfig(BaseModel):
 
 class FFmpegConfig(BaseModel):
     """FFmpeg executable and default encoding configuration."""
+
+    # Accept the legacy ``bitrate`` key alongside the new ``audio_bitrate`` name so
+    # existing settings.yaml files keep loading unchanged.
+    model_config = ConfigDict(populate_by_name=True)
+
     path: str = Field(default="ffmpeg", description="Path or command to run FFmpeg")
     executable: Optional[str] = Field(default=None, description="Explicit FFmpeg command; overrides path")
     ffprobe: str = Field(default="ffprobe", description="Path or command to run FFprobe")
     timeout: int = Field(default=3600, gt=0, description="Maximum processing time in seconds")
     threads: str | int = Field(default="auto", description="FFmpeg thread count or auto")
-    hwaccel: Optional[str] = Field(default=None, description="Optional FFmpeg hardware acceleration method")
-    codec: str = Field(default="libx264", description="Video codec for rendering")
+    hwaccel: Optional[str] = Field(default=None, description="FFmpeg decode hwaccel method, 'auto', or null to disable")
+    codec: str = Field(default="auto", description="Video codec ('auto' lets hardware selection choose h264)")
     preset: str = Field(default="medium", description="FFmpeg speed preset")
-    crf: int = Field(default=23, ge=0, le=51, description="Constant Rate Factor quality (0-51)")
+    crf: int = Field(default=23, ge=0, le=51, description="Constant Rate Factor quality (0-51); used when video_bitrate is null")
+    video_bitrate: Optional[str] = Field(default=None, description="Target video bitrate (e.g. '8M'); overrides CRF when set")
     audio_codec: str = Field(default="aac", description="Audio codec for rendering")
-    bitrate: str = Field(default="192k", description="Audio encoding bitrate")
+    audio_bitrate: str = Field(
+        default="192k",
+        validation_alias=AliasChoices("audio_bitrate", "bitrate"),
+        description="Audio encoding bitrate",
+    )
 
 
 class YtDlpConfig(BaseModel):

@@ -38,6 +38,39 @@ def test_selector_prefers_nvenc_when_available():
     assert selected.encoder == "h264_nvenc" and selected.backend is HardwareBackend.NVENC
 
 
+def test_args_for_software_uses_crf_when_no_video_bitrate():
+    decision = EncoderDecision(encoder="libx264", backend=HardwareBackend.SOFTWARE, hardware=False, crf=23, preset="medium")
+    args = PerformanceEncoder.args_for(decision, audio_bitrate="192k")
+    assert "-crf" in args and args[args.index("-crf") + 1] == "23"
+    assert "-b:v" not in args
+    assert args[args.index("-b:a") + 1] == "192k"
+
+
+def test_args_for_video_bitrate_replaces_crf_on_software():
+    decision = EncoderDecision(encoder="libx264", backend=HardwareBackend.SOFTWARE, hardware=False, crf=23, preset="medium")
+    args = PerformanceEncoder.args_for(decision, audio_bitrate="192k", video_bitrate="8M")
+    assert args[args.index("-b:v") + 1] == "8M"
+    assert "-crf" not in args  # bitrate and CRF are mutually exclusive
+
+
+def test_args_for_video_bitrate_overrides_hardware_defaults():
+    decision = EncoderDecision(encoder="h264_videotoolbox", backend=HardwareBackend.VIDEOTOOLBOX, hardware=True, bitrate="8M")
+    args = PerformanceEncoder.args_for(decision, audio_bitrate="192k", video_bitrate="12M")
+    assert args[args.index("-b:v") + 1] == "12M"  # explicit setting wins over the decision default
+    assert "-crf" not in args
+
+
+def test_default_args_threads_video_bitrate_from_settings(tmp_path):
+    settings = load_config("settings.yaml")
+    settings.ffmpeg.video_bitrate = "5M"
+    settings.ffmpeg.audio_bitrate = "256k"
+    runner = _software_runner()
+    args = PerformanceEncoder(runner, settings).default_args()
+    assert args[args.index("-b:v") + 1] == "5M"
+    assert args[args.index("-b:a") + 1] == "256k"
+    assert "-crf" not in args
+
+
 def test_metrics_parse_ffmpeg_output(tmp_path):
     output = tmp_path / "out.mp4"; output.write_bytes(b"video")
     collector = MetricsCollector(); start = collector.start()
