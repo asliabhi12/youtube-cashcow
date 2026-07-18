@@ -8,14 +8,21 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.models.job import Job, JobCreate
 from app.services.jobs import job_store
+from app.services.workflow import start_workflow
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
 @router.post("", response_model=Job, status_code=status.HTTP_201_CREATED)
 def create_job(payload: JobCreate) -> Job:
-    """Create a pending job for the given URL."""
-    return job_store.create(payload.url)
+    """Create a pending job and start its workflow in the background.
+
+    Returns immediately with the created job; processing runs asynchronously
+    and updates the job's status as the workflow progresses.
+    """
+    job = job_store.create(payload.url)
+    start_workflow(job.id, job.url)
+    return job
 
 
 @router.get("", response_model=list[Job])

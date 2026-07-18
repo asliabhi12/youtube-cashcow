@@ -5,9 +5,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-# Job lifecycle states. Only "pending" exists this phase; more are added
-# when processing is wired up.
-JobStatus = Literal["pending"]
+# Job lifecycle states, mirroring the workflow's progress: a job is "pending"
+# until its workflow starts, "running" while the engine executes, then either
+# "completed" or "failed" once the pipeline finishes.
+JobStatus = Literal["pending", "running", "completed", "failed"]
 
 
 class JobCreate(BaseModel):
@@ -23,3 +24,8 @@ class Job(BaseModel):
     url: str
     status: JobStatus
     created_at: datetime
+    # Populated from the workflow result once it finishes: the produced file on
+    # success, or the failure detail on error. Both stay None while pending or
+    # running.
+    output_file: str | None = None
+    error: str | None = None

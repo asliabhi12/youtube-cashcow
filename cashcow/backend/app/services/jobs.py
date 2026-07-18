@@ -5,16 +5,22 @@ yet. A module-level singleton (`job_store`) is shared across requests.
 """
 
 from datetime import datetime, timezone
+from threading import Lock
 from uuid import uuid4
 
-from app.models.job import Job
+from app.models.job import Job, JobStatus
 
 
 class JobStore:
-    """Create, read, and delete jobs kept in memory."""
+    """Create, read, and delete jobs kept in memory.
+
+    A lock guards every access because the workflow engine updates job status
+    from a background thread while request handlers read and write concurrently.
+    """
 
     def __init__(self) -> None:
         self._jobs: dict[str, Job] = {}
+        self._lock = Lock()
 
     def create(self, url: str) -> Job:
         """Create a pending job for the given URL and store it."""
@@ -24,20 +30,47 @@ class JobStore:
             status="pending",
             created_at=datetime.now(timezone.utc),
         )
-        self._jobs[job.id] = job
+        with self._lock:
+            self._jobs[job.id] = job
         return job
 
     def list(self) -> list[Job]:
         """Return all jobs in creation order."""
-        return list(self._jobs.values())
+        with self._lock:
+            return list(self._jobs.values())
 
     def get(self, job_id: str) -> Job | None:
         """Return the job with the given id, or None if it does not exist."""
-        return self._jobs.get(job_id)
+        with self._lock:
+            return self._jobs.get(job_id)
 
     def delete(self, job_id: str) -> bool:
         """Remove a job. Return True if it existed, False otherwise."""
-        return self._jobs.pop(job_id, None) is not None
+        with self._lock:
+            return self._jobs.pop(job_id, None) is not None
+
+    def set_status(
+        self,
+        job_id: str,
+        status: JobStatus,
+        *,
+        output_file: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Update a job's status and optional result fields.
+
+        Called as the workflow progresses. Missing jobs (e.g. deleted mid-run)
+        are ignored so a late engine callback cannot resurrect them.
+        """
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return
+            job.status = status
+            if output_file is not None:
+                job.output_file = output_file
+            if error is not None:
+                job.error = error
 
 
 # Process-wide store shared by all requests.
