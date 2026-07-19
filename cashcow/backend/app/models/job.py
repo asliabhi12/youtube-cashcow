@@ -48,20 +48,33 @@ class TrimRange(BaseModel):
 class JobCreate(BaseModel):
     """Request body for POST /jobs.
 
-    Beyond the URL, the body carries a *creative profile* — a trim range, an
-    editing preset, and an export quality — that the workflow adapter injects
-    into the fixed processing pipeline. None of these configure the pipeline's
-    steps or order; they only supply parameters the existing steps accept.
+    Beyond the URL, the body carries a *creative profile* — a trim range, a
+    profile id, and an export quality — that the workflow adapter injects into
+    the fixed processing pipeline. None of these configure the pipeline's steps
+    or order; they only supply parameters the existing steps accept.
     """
 
     url: str = Field(min_length=1, description="YouTube URL to process.")
     trim: TrimRange | None = Field(
         default=None, description="Optional clip range; the whole video is used when omitted."
     )
-    preset: str = Field(default="custom", description="Editing preset slug (see GET /presets).")
+    profile_id: str | None = Field(
+        default=None, description="Creative profile id (see GET /profiles)."
+    )
+    # Deprecated alias for ``profile_id``, kept so older clients that still send
+    # ``preset`` keep working. ``effective_profile_id`` resolves the two.
+    preset: str | None = Field(
+        default=None, description="Deprecated: use profile_id. Legacy editing-preset slug."
+    )
     export_quality: str = Field(
         default="balanced", description="Export quality slug (see GET /export-qualities)."
     )
+
+    @property
+    def effective_profile_id(self) -> str:
+        """The profile id to run, preferring ``profile_id`` over the legacy
+        ``preset`` alias, and defaulting to ``custom`` (the bare pipeline)."""
+        return self.profile_id or self.preset or "custom"
 
 
 class Job(BaseModel):
@@ -72,7 +85,7 @@ class Job(BaseModel):
     status: JobStatus
     created_at: datetime
     # The creative profile this job was created with, echoed back for display.
-    preset: str = "custom"
+    profile_id: str = "custom"
     export_quality: str = "balanced"
     # Populated from the workflow result once it finishes: the produced file on
     # success, or the failure detail on error. Both stay None while pending or

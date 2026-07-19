@@ -2,7 +2,8 @@
 
 import { AdvancedOptions } from "@/components/advanced-options";
 import { ExportQualitySelector } from "@/components/export-quality-selector";
-import { PresetSelector } from "@/components/preset-selector";
+import { ProfileActions } from "@/components/profile-actions";
+import { ProfileSelector } from "@/components/profile-selector";
 import { TrimRangeSlider, formatDuration } from "@/components/trim-range-slider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,13 +61,24 @@ export function WorkflowForm() {
         />
       </div>
 
-      {/* Editing preset */}
-      <PresetSelector
-        options={form.presets}
-        value={form.preset}
-        onChange={form.setPreset}
-        disabled={form.submitting}
-      />
+      {/* Creative profile */}
+      <div className="flex flex-col gap-3">
+        <ProfileSelector
+          options={form.profiles}
+          value={form.profileId}
+          onChange={form.setProfileId}
+          disabled={form.submitting}
+        />
+        <ProfileActions
+          isBuiltin={form.isBuiltinProfile}
+          canDelete={!form.isBuiltinProfile && form.profileId !== ""}
+          disabled={form.submitting}
+          onNew={() => void form.newProfile()}
+          onSave={() => void form.saveProfile()}
+          onSaveAs={() => void form.saveProfileAs()}
+          onDelete={() => void form.removeProfile()}
+        />
+      </div>
 
       {/* Export quality */}
       <ExportQualitySelector

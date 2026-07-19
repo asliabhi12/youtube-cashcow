@@ -14,7 +14,9 @@ develop-eggs/
 downloads/
 eggs/
 .eggs/
-lib/
+# Anchored to the repo root so this matches Python's build lib/ only — not
+# nested source dirs like cashcow/frontend/lib/.
+/lib/
 lib64/
 parts/
 sdist/
@@ -99,7 +101,15 @@ profile/
 # ==========================
 # FFmpeg Temp Files
 # ==========================
-*.ts
+# `.ts` here means MPEG transport-stream segments, which FFmpeg only writes into
+# the generated-media dirs. Scope the rule to those dirs so it does not also
+# ignore TypeScript source under cashcow/frontend/.
+output/**/*.ts
+temp/**/*.ts
+downloads/**/*.ts
+workspace/**/*.ts
+benchmark/**/*.ts
+*.tsbuildinfo
 *.part
 *.tmp
 

@@ -14,9 +14,10 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse, StreamingResponse
 
 from app.models.job import Job, JobCreate, JobLogEntry
+from app.services import app_settings, profiles
 from app.services.job_logs import CLOSE, job_log_hub
 from app.services.jobs import job_store
-from app.services.presets import is_preset, is_quality
+from app.services.presets import is_quality
 from app.services.workflow import start_workflow
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -37,14 +38,15 @@ def _sse(data: str, *, event: str | None = None) -> str:
 def create_job(payload: JobCreate) -> Job:
     """Create a pending job and start its workflow in the background.
 
-    Validates the creative profile (preset and export quality must be known
-    slugs), then returns immediately with the created job; processing runs
-    asynchronously and updates the job's status as the workflow progresses.
+    Validates the creative profile (profile id and export quality must be known),
+    then returns immediately with the created job; processing runs asynchronously
+    and updates the job's status as the workflow progresses.
     """
-    if not is_preset(payload.preset):
+    profile_id = payload.effective_profile_id
+    if not profiles.profile_exists(profile_id):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Unknown preset: '{payload.preset}'",
+            detail=f"Unknown profile: '{profile_id}'",
         )
     if not is_quality(payload.export_quality):
         raise HTTPException(
@@ -54,14 +56,20 @@ def create_job(payload: JobCreate) -> Job:
 
     job = job_store.create(
         payload.url,
-        preset=payload.preset,
+        profile_id=profile_id,
         export_quality=payload.export_quality,
     )
+    # Remember this as the last-used profile so the Home page can re-open it.
+    # Best-effort: a settings write failure must never fail the job.
+    try:
+        app_settings.set_last_profile(profile_id)
+    except Exception:  # noqa: BLE001 - persistence is non-critical here
+        pass
     start_workflow(
         job.id,
         job.url,
         trim=payload.trim,
-        preset=payload.preset,
+        profile_id=profile_id,
         export_quality=payload.export_quality,
     )
     return job

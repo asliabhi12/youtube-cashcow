@@ -1,0 +1,29 @@
+# Built-in creative profile (read-only). Stores only editable creative
+# parameters the workflow adapter injects into the fixed pipeline — never
+# workflow steps. See cashcow/backend/app/services/profiles.py.
+label: Gaming
+description: >-
+  High-energy: sharp, saturated colours, punchy bass, and an overlay.
+
+audio:
+  effects:
+    - {type: normalize}
+    - {type: bass, gain: 6}
+
+color:
+  brightness: 0.03
+  contrast: 1.20
+  saturation: 1.30
+  gamma: 1.0
+
+overlay:
+  # Bare filename; the adapter resolves it against assets/overlays/.
+  asset: yellow.jpg
+  x: center
+  y: center
+  scale: 1.0
+  opacity: 1.0
+  mask:
+    type: ellipse
+    feather: 60
+    invert: true

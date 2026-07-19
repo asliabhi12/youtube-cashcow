@@ -92,7 +92,7 @@ export default function JobsPage() {
       // Re-run preserves the original job's creative profile.
       await createJob({
         url: job.url,
-        preset: job.preset,
+        profile_id: job.profile_id,
         export_quality: job.export_quality,
       });
       await load();

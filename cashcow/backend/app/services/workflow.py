@@ -35,7 +35,8 @@ from src.pipeline.models import StepRecord  # noqa: E402
 from app.models.job import TrimRange  # noqa: E402
 from app.services.job_logs import job_log_hub  # noqa: E402
 from app.services.jobs import job_store  # noqa: E402
-from app.services.presets import preset_config, quality_overrides  # noqa: E402
+from app.services.presets import quality_overrides  # noqa: E402
+from app.services.profiles import resolve_config  # noqa: E402
 
 _SETTINGS_FILE = _PROJECT_ROOT / "settings.yaml"
 _OUTPUT_DIRNAME = "output"
@@ -150,19 +151,19 @@ def _build_workflow(
     url: str,
     *,
     trim: TrimRange | None,
-    preset: str,
+    profile_id: str,
 ) -> WorkflowDefinition:
-    """Compose the full fixed pipeline for a job, parameterised by the preset.
+    """Compose the full fixed pipeline for a job, parameterised by the profile.
 
     The step *order* is always the same fixed sequence
     (download → trim → resize → audio → color → overlay → encode → export); a
-    creative step is emitted only when the chosen preset supplies a config block
+    creative step is emitted only when the chosen profile supplies a config block
     for it. ``download``, ``encode`` and ``export`` are always present, and
     ``trim`` is included whenever a range is given. This never lets the caller
     add, remove, or reorder steps — it only decides which optional creative
     steps carry configuration.
     """
-    config = preset_config(preset)
+    config = resolve_config(profile_id)
     output_path = _PROJECT_ROOT / _OUTPUT_DIRNAME / f"{job_id}.mp4"
 
     steps: list[WorkflowStep] = [WorkflowStep(name="download", options={"url": url})]
@@ -249,13 +250,13 @@ def start_workflow(
     url: str,
     *,
     trim: TrimRange | None = None,
-    preset: str = "custom",
+    profile_id: str = "custom",
     export_quality: str = "balanced",
 ) -> None:
     """Start the engine for a job without blocking the caller.
 
-    Builds the full pipeline for the job's creative profile (trim range, editing
-    preset, export quality), then hands execution to a daemon thread so the HTTP
+    Builds the full pipeline for the job's creative profile (trim range, creative
+    profile, export quality), then hands execution to a daemon thread so the HTTP
     request returns immediately while the pipeline runs in the background.
     """
     # Record the pre-execution lifecycle before handing off to the thread, so
@@ -263,7 +264,7 @@ def start_workflow(
     # subscribes.
     job_log_hub.append(job_id, "INFO", "Job created")
     job_log_hub.append(job_id, "INFO", "Starting workflow")
-    workflow = _build_workflow(job_id, url, trim=trim, preset=preset)
+    workflow = _build_workflow(job_id, url, trim=trim, profile_id=profile_id)
     settings = _settings_for_quality(export_quality)
     thread = threading.Thread(
         target=_execute,

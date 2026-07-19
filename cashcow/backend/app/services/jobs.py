@@ -27,7 +27,7 @@ class JobStore:
         self,
         url: str,
         *,
-        preset: str = "custom",
+        profile_id: str = "custom",
         export_quality: str = "balanced",
     ) -> Job:
         """Create a pending job for the given URL and creative profile."""
@@ -36,7 +36,7 @@ class JobStore:
             url=url,
             status="pending",
             created_at=datetime.now(timezone.utc),
-            preset=preset,
+            profile_id=profile_id,
             export_quality=export_quality,
         )
         with self._lock:

@@ -1,30 +1,25 @@
-"""Preset and export-quality option routes.
+"""Export-quality option route.
 
-The frontend fetches these lists to render the editing-preset selector and the
-export-quality radio group, keeping the backend the single source of truth for
-the option set (labels, descriptions, and slugs) that ``POST /jobs`` validates.
+The frontend fetches this list to render the export-quality radio group, keeping
+the backend the single source of truth for the option set (labels, descriptions,
+and slugs) that ``POST /jobs`` validates. Editing presets have been replaced by
+the creative-profile system; see ``app.api.profiles``.
 """
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.services.presets import list_presets, list_qualities
+from app.services.presets import list_qualities
 
 router = APIRouter(tags=["presets"])
 
 
 class PresetOption(BaseModel):
-    """A selectable option for the UI (preset or export quality)."""
+    """A selectable option for the UI (export quality)."""
 
     value: str
     label: str
     description: str
-
-
-@router.get("/presets", response_model=list[PresetOption])
-def get_presets() -> list[PresetOption]:
-    """Return the available editing presets, in display order."""
-    return [PresetOption(**option) for option in list_presets()]
 
 
 @router.get("/export-qualities", response_model=list[PresetOption])
