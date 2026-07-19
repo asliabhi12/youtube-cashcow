@@ -1,0 +1,13 @@
+# Built-in creative profile (read-only). Stores only editable creative
+# parameters the workflow adapter injects into the fixed pipeline — never
+# workflow steps. See cashcow/backend/app/services/profiles.py.
+label: Podcast
+description: >-
+  Minimal visual change; just normalised, clear audio.
+metadata_prompt: >-
+  Write a clear, searchable podcast-style YouTube title and description focused
+  on the conversation, topic, guest or host value, and long-term discoverability.
+
+audio:
+  effects:
+    - {type: normalize}

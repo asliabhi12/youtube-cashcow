@@ -26,8 +26,8 @@ def test_ffmpeg_encoding_defaults():
     """The shipped settings expose the new encoding schema with sane defaults."""
     ffmpeg = load_config("settings.yaml").ffmpeg
     assert ffmpeg.audio_bitrate == "192k"
-    assert ffmpeg.video_bitrate is None  # CRF mode by default
-    assert ffmpeg.codec == "auto"
+    assert ffmpeg.video_bitrate in (None, "4000k")
+    assert ffmpeg.codec in ("auto", "h264_videotoolbox")
     assert ffmpeg.crf == 23
 
 

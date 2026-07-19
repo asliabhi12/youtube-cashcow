@@ -13,12 +13,28 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse, StreamingResponse
 
-from app.models.job import Job, JobCreate, JobLogEntry
+from app.models.job import Job, JobCreate, JobLogEntry, JobProgress
+from app.services import app_settings, profiles
 from app.services.job_logs import CLOSE, job_log_hub
 from app.services.jobs import job_store
-from app.services.workflow import start_workflow
+from app.services.presets import is_quality
+from app.services.queue import job_queue
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+
+def _with_queue_position(job: Job) -> Job:
+    """Return the job annotated with its live FIFO queue position.
+
+    Position is meaningful only while the job is ``queued``; it is recomputed
+    from the queue on every read (never stored), so it always reflects the
+    current line even as jobs ahead finish or are removed.
+    """
+    if job.status == "queued":
+        job.queue_position = job_queue.position(job.id)
+    else:
+        job.queue_position = None
+    return job
 
 
 def _sse(data: str, *, event: str | None = None) -> str:
@@ -34,34 +50,88 @@ def _sse(data: str, *, event: str | None = None) -> str:
 
 @router.post("", response_model=Job, status_code=status.HTTP_201_CREATED)
 def create_job(payload: JobCreate) -> Job:
-    """Create a pending job and start its workflow in the background.
+    """Create a job and submit it to the FIFO queue.
 
-    Returns immediately with the created job; processing runs asynchronously
-    and updates the job's status as the workflow progresses.
+    Validates the creative profile (profile id and export quality must be known),
+    then returns immediately with the created job. The queue starts the job at
+    once if no other job is running, otherwise it waits its turn; either way the
+    job's status transitions asynchronously as it is queued, run, and finished.
     """
-    job = job_store.create(payload.url)
-    start_workflow(job.id, job.url)
-    return job
+    profile_id = payload.effective_profile_id
+    if not profiles.profile_exists(profile_id):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown profile: '{profile_id}'",
+        )
+    if not is_quality(payload.export_quality):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown export quality: '{payload.export_quality}'",
+        )
+
+    job = job_store.create(
+        payload.url,
+        profile_id=profile_id,
+        export_quality=payload.export_quality,
+        title_seed=payload.title_seed,
+    )
+    # Remember this as the last-used profile so the Home page can re-open it.
+    # Best-effort: a settings write failure must never fail the job.
+    try:
+        app_settings.set_last_profile(profile_id)
+    except Exception:  # noqa: BLE001 - persistence is non-critical here
+        pass
+    # Hand the job to the queue. It starts immediately when the single worker is
+    # idle, or waits in line otherwise. The workflow adapter is never called
+    # directly from here anymore, so multiple submits can never run concurrently.
+    job_queue.submit(
+        job.id,
+        job.url,
+        trim=payload.trim,
+        profile_id=profile_id,
+        export_quality=payload.export_quality,
+    )
+    # Re-read so the response reflects the status the queue just set (queued or
+    # running) plus any position, rather than the transient "pending".
+    return _with_queue_position(job_store.get(job.id) or job)
 
 
 @router.get("", response_model=list[Job])
 def list_jobs() -> list[Job]:
-    """Return all jobs in creation order."""
-    return job_store.list()
+    """Return all jobs in creation order, each with its live queue position."""
+    return [_with_queue_position(job) for job in job_store.list()]
 
 
 @router.get("/{job_id}", response_model=Job)
 def get_job(job_id: str) -> Job:
-    """Return a single job, or 404 if it does not exist."""
+    """Return a single job (with its live queue position), or 404."""
     job = job_store.get(job_id)
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    return job
+    return _with_queue_position(job)
 
 
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_job(job_id: str) -> None:
-    """Delete a job, or 404 if it does not exist."""
+    """Delete a job (or remove it from the queue), with the running job protected.
+
+    * A ``queued`` job is pulled out of the FIFO queue and its record removed.
+    * A ``running`` job is refused with 409 — there is no safe mid-pipeline
+      cancel, so the running job cannot be deleted.
+    * A finished job (completed/failed) is simply removed from history.
+    * An unknown id is 404.
+    """
+    job = job_store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    if job.status == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The running job can't be deleted; wait for it to finish.",
+        )
+    # Remove it from the waiting line first (no-op if it isn't queued), so the
+    # worker never later tries to start a job whose record is gone.
+    job_queue.remove(job_id)
     if not job_store.delete(job_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
@@ -87,14 +157,19 @@ async def stream_job_logs(job_id: str) -> StreamingResponse:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
     loop = asyncio.get_running_loop()
-    # Snapshot history and subscribe atomically so no entry is missed between
-    # the two, and none is delivered twice.
-    snapshot, queue = job_log_hub.subscribe(job_id, loop)
+    # Snapshot history plus the latest progress and subscribe atomically, so no
+    # entry is missed between the two and none is delivered twice.
+    snapshot, progress, queue = job_log_hub.subscribe(job_id, loop)
 
     async def event_stream() -> AsyncIterator[str]:
         try:
             for entry in snapshot:
                 yield _sse(entry.model_dump_json())
+            # Replay the current progress bar (if any) right after the backlog,
+            # so a client joining mid-run renders the live percentage at once
+            # rather than waiting for the next update.
+            if progress is not None:
+                yield _sse(progress.model_dump_json(), event="progress")
             while True:
                 item = await queue.get()
                 if item is CLOSE:
@@ -102,7 +177,12 @@ async def stream_job_logs(job_id: str) -> StreamingResponse:
                     # stops reconnecting, then end the generator.
                     yield _sse(json.dumps({"job_id": job_id}), event="end")
                     return
-                yield _sse(item.model_dump_json())
+                if isinstance(item, JobProgress):
+                    # A named "progress" event so the client can tell overall
+                    # progress apart from log lines on the one stream.
+                    yield _sse(item.model_dump_json(), event="progress")
+                else:
+                    yield _sse(item.model_dump_json())
         finally:
             # Always drop the subscription, whether the job closed the stream or
             # the client disconnected mid-stream.
@@ -145,4 +225,6 @@ def download_job_output(job_id: str) -> FileResponse:
             detail="Output file no longer exists",
         )
 
-    return FileResponse(path, filename=path.name, media_type="application/octet-stream")
+    # Serve under the title-derived name when known, else the on-disk name.
+    filename = job.output_name or path.name
+    return FileResponse(path, filename=filename, media_type="application/octet-stream")

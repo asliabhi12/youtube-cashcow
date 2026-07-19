@@ -1,0 +1,45 @@
+# Built-in creative profile (read-only). Stores only editable creative
+# parameters the workflow adapter injects into the fixed pipeline — never
+# workflow steps. See cashcow/backend/app/services/profiles.py.
+label: YouTube Shorts
+description: >-
+  Punchy vertical look: zoomed 9:16, boosted audio, vivid grade, and an overlay.
+metadata_prompt: >-
+  Write a concise, high-CTR YouTube Shorts title and description that captures
+  the strongest hook quickly while staying accurate and avoiding excessive
+  clickbait.
+
+resize:
+  preset: shorts
+  zoom: 1.15
+
+audio:
+  effects:
+    - {type: normalize}
+    - {type: bass, gain: 5}
+    - {type: treble, gain: 3}
+    - {type: volume, gain: 12}
+    - {type: speed, factor: 1.03}
+
+color:
+  brightness: 0.05
+  contrast: 1.15
+  saturation: 1.20
+  gamma: 1.0
+  hue: 20
+
+overlay:
+  # Bare filename; the adapter resolves it against assets/overlays/.
+  asset: yellow.jpg
+  x: center
+  y: center
+  scale: 1.0
+  opacity: 1.0
+  color:
+    saturation: 1.40
+    hue: 20
+    brightness: 0.08
+  mask:
+    type: ellipse
+    feather: 60
+    invert: true

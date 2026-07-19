@@ -1,0 +1,20 @@
+# Built-in creative profile (read-only). Stores only editable creative
+# parameters the workflow adapter injects into the fixed pipeline — never
+# workflow steps. See cashcow/backend/app/services/profiles.py.
+label: Cinematic
+description: >-
+  Filmic grade: gentle contrast, slightly desaturated and warm. Clean audio, no overlay.
+metadata_prompt: >-
+  Write a cinematic, emotional YouTube title and description with premium
+  storytelling, clean SEO, and an immersive tone.
+
+audio:
+  effects:
+    - {type: normalize}
+
+color:
+  brightness: -0.02
+  contrast: 1.10
+  saturation: 0.95
+  gamma: 1.0
+  temperature: 0.15

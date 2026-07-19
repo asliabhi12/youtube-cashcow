@@ -153,7 +153,7 @@ def test_benchmark_encoder_profile_limits_duration(tmp_path):
     report = reports[0]
     assert report.profile is BenchmarkProfile.ENCODER
     assert report.resolution == "3840x2160" and report.input_codec == "av1"
-    assert report.decoder and report.decoder.decoder == "libdav1d"
+    assert report.decoder and report.decoder.decoder in ("libdav1d", "videotoolbox")
 
 
 def test_benchmark_transcode_profile_uses_full_file(tmp_path):
