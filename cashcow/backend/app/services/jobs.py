@@ -8,13 +8,13 @@ from datetime import datetime, timezone
 from threading import Lock
 from uuid import uuid4
 
-from app.models.job import Job, JobStatus, MetadataStatus
+from app.models.job import Job, JobStatus, MetadataStatus, YouTubeUploadStatus
 from app.services.job_logs import job_log_hub
 
 # Statuses at which a job has begun executing (left the queue) and reached a
 # terminal state, used to stamp the started/finished timestamps exactly once.
-_RUNNING_STATUSES = {"running"}
-_TERMINAL_STATUSES = {"completed", "failed"}
+_RUNNING_STATUSES = {"running", "cancelling"}
+_TERMINAL_STATUSES = {"completed", "failed", "upload_failed", "cancelled"}
 
 
 class JobStore:
@@ -104,6 +104,66 @@ class JobStore:
                 job.output_file = output_file
             if error is not None:
                 job.error = error
+
+    def set_upload_started(self, job_id: str) -> None:
+        """Mark the YouTube stage as actively uploading and count the attempt."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return
+            job.youtube_upload_status = "uploading"
+            job.youtube_upload_error = None
+            job.upload_attempts += 1
+
+    def set_upload_result(
+        self,
+        job_id: str,
+        status: YouTubeUploadStatus,
+        *,
+        video_id: str | None = None,
+        video_url: str | None = None,
+        uploaded_at: datetime | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Persist the latest YouTube upload result on the job."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return
+            job.youtube_upload_status = status
+            if video_id is not None:
+                job.youtube_video_id = video_id
+            if video_url is not None:
+                job.youtube_video_url = video_url
+            if uploaded_at is not None:
+                job.youtube_uploaded_at = uploaded_at
+            job.youtube_upload_error = error
+
+    def request_cancel(self, job_id: str) -> Job | None:
+        """Request cooperative cancellation for a queued/running job."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return None
+            job.cancel_requested = True
+            if job.status in {"pending", "queued", "running"}:
+                job.status = "cancelling"
+                if job.started_at is None:
+                    job.started_at = datetime.now(timezone.utc)
+            return job
+
+    def clear_cancel_request(self, job_id: str) -> None:
+        """Clear stale cancellation state before reusing a job for upload retry."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is not None:
+                job.cancel_requested = False
+
+    def is_cancel_requested(self, job_id: str) -> bool:
+        """Whether cancellation has been requested for a job."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            return bool(job and job.cancel_requested)
 
     def set_progress(
         self,

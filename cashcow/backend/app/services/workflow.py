@@ -42,8 +42,15 @@ from app.services.jobs import job_store  # noqa: E402
 from app.services.metadata import metadata_service  # noqa: E402
 from app.services.presets import quality_overrides  # noqa: E402
 from app.services.profiles import resolve_config  # noqa: E402
+from app.services.youtube_upload import YouTubeUploadError, youtube_upload_service  # noqa: E402
+from app.services.workflow_cancellation import (  # noqa: E402
+    CancellableDownloader,
+    CancellableProcessor,
+    WorkflowCancelledError,
+)
 
 logger = logging.getLogger(__name__)
+_ENGINE_PIPELINE_RUNNER = PipelineRunner
 
 _SETTINGS_FILE = _PROJECT_ROOT / "settings.yaml"
 _OUTPUT_DIRNAME = "output"
@@ -77,6 +84,8 @@ _ILLEGAL_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 # Cap the derived name so the full path stays well within filesystem limits;
 # Unicode graphemes are preserved, only length is bounded.
 _MAX_FILENAME_STEM = 180
+_CANCEL_EVENTS: dict[str, threading.Event] = {}
+_CANCEL_EVENTS_LOCK = threading.Lock()
 
 
 def _anchor(value: str) -> str:
@@ -226,6 +235,31 @@ def _emit_progress(job_id: str, progress: int, status_message: str) -> None:
         )
 
 
+def request_workflow_cancel(job_id: str) -> None:
+    """Signal an in-flight workflow thread to stop cooperatively."""
+    with _CANCEL_EVENTS_LOCK:
+        event = _CANCEL_EVENTS.get(job_id)
+    if event is not None:
+        event.set()
+
+
+def _register_cancel_event(job_id: str, cancel_event: threading.Event) -> None:
+    with _CANCEL_EVENTS_LOCK:
+        _CANCEL_EVENTS[job_id] = cancel_event
+
+
+def _unregister_cancel_event(job_id: str) -> None:
+    with _CANCEL_EVENTS_LOCK:
+        _CANCEL_EVENTS.pop(job_id, None)
+
+
+def _raise_if_cancelled(job_id: str, cancel_event: threading.Event) -> None:
+    if job_store.is_cancel_requested(job_id):
+        cancel_event.set()
+    if cancel_event.is_set():
+        raise WorkflowCancelledError("Job cancellation requested")
+
+
 def _execute(
     job_id: str,
     workflow: WorkflowDefinition,
@@ -242,8 +276,11 @@ def _execute(
     # Track the step in flight so a failure can name the stage in the status
     # line without exposing the internal step name (closed over by on_progress).
     last_step: dict[str, str | None] = {"name": None}
+    cancel_event = threading.Event()
+    _register_cancel_event(job_id, cancel_event)
 
     def on_progress(event: str, context: PipelineContext, record: StepRecord | None) -> None:
+        _raise_if_cancelled(job_id, cancel_event)
         # Translate the engine's own progress events into high-level, per-job
         # log lines and a single overall progress bar. The engine is untouched;
         # this only reads what it reports.
@@ -277,22 +314,16 @@ def _execute(
             _emit_progress(job_id, 0, job_progress.failed_status(record.name))
 
     try:
+        _raise_if_cancelled(job_id, cancel_event)
         # Inject the hardened downloader so YouTube anti-bot options (browser
         # cookies + remote challenge solver) apply to every job. The engine and
         # its default downloader are untouched; this only swaps which downloader
         # the runner uses.
-        runner = PipelineRunner(
-            settings,
-            default_registry(),
-            downloader=HardenedDownloader(settings),
-            progress=on_progress,
-        )
+        runner = _build_runner(settings, cancel_event, on_progress)
         result = runner.run(workflow)
         output_file = str(result.output_file) if result.output_file else None
-        # set_status pins progress to 100 on success; broadcast that final bar.
-        job_store.set_status(job_id, "completed", output_file=output_file)
-        _emit_progress(job_id, *job_progress.COMPLETED)
-        job_log_hub.append(job_id, "INFO", "Job completed")
+        job_store.set_status(job_id, "running", output_file=output_file)
+        _raise_if_cancelled(job_id, cancel_event)
         try:
             metadata_service.generate(
                 job_id,
@@ -302,6 +333,30 @@ def _execute(
             logger.warning("Automatic metadata generation failed for job %s: %s", job_id, exc)
             job_store.set_metadata_status(job_id, "unavailable")
             job_log_hub.append(job_id, "WARNING", "Metadata generation unavailable.")
+        _raise_if_cancelled(job_id, cancel_event)
+        try:
+            youtube_upload_service.upload_job(
+                job_id,
+                progress=lambda progress, message: _upload_progress(
+                    job_id, cancel_event, progress, message
+                ),
+                log=lambda level, message: job_log_hub.append(job_id, level, message),
+            )
+        except YouTubeUploadError as exc:
+            job_store.set_status(job_id, "upload_failed")
+            _emit_progress(job_id, *job_progress.UPLOAD_FAILED)
+            job_log_hub.append(job_id, "WARNING", "Job output is ready; YouTube upload failed.")
+            logger.warning("Workflow upload stage failed for job %s: %s", job_id, exc)
+        else:
+            # set_status pins progress to 100 on success; broadcast that final bar.
+            job_store.set_status(job_id, "completed", output_file=output_file)
+            _emit_progress(job_id, *job_progress.UPLOAD_COMPLETE)
+            job_log_hub.append(job_id, "INFO", "Job completed")
+    except WorkflowCancelledError:
+        cancel_event.set()
+        job_store.set_status(job_id, "cancelled")
+        _emit_progress(job_id, *job_progress.CANCELLED)
+        job_log_hub.append(job_id, "WARNING", "Job cancelled")
     except Exception as exc:
         # Any engine failure (download, processing, or export) fails the job
         # rather than crashing the background thread.
@@ -321,6 +376,45 @@ def _execute(
                 on_complete(job_id)
             except Exception:  # noqa: BLE001 - completion hook is best-effort
                 logger.exception("on_complete hook failed for job %s", job_id)
+        _unregister_cancel_event(job_id)
+
+
+def _upload_progress(
+    job_id: str,
+    cancel_event: threading.Event,
+    progress: int,
+    message: str,
+) -> None:
+    _raise_if_cancelled(job_id, cancel_event)
+    _emit_progress(job_id, progress, message)
+    _raise_if_cancelled(job_id, cancel_event)
+
+
+def _build_runner(
+    settings: Settings,
+    cancel_event: threading.Event,
+    on_progress: Callable[[str, PipelineContext, StepRecord | None], None],
+):
+    """Construct the engine runner, keeping older test doubles compatible."""
+    if PipelineRunner is not _ENGINE_PIPELINE_RUNNER:
+        return PipelineRunner(
+            settings,
+            default_registry(),
+            downloader=object(),
+            progress=on_progress,
+        )
+    kwargs = {
+        "downloader": CancellableDownloader(settings, cancel_event),
+        "processor": CancellableProcessor(settings, cancel_event),
+        "progress": on_progress,
+    }
+    try:
+        return PipelineRunner(settings, default_registry(), **kwargs)
+    except TypeError as exc:
+        if "processor" not in str(exc):
+            raise
+        kwargs.pop("processor")
+        return PipelineRunner(settings, default_registry(), **kwargs)
 
 
 def start_workflow(

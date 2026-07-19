@@ -9,8 +9,18 @@ from pydantic import BaseModel, Field, model_validator
 # while it waits its turn in the FIFO queue, "running" while the engine executes
 # it, then either "completed" or "failed" once the pipeline finishes. Only one
 # job is ever "running" at a time.
-JobStatus = Literal["pending", "queued", "running", "completed", "failed"]
+JobStatus = Literal[
+    "pending",
+    "queued",
+    "running",
+    "cancelling",
+    "cancelled",
+    "completed",
+    "failed",
+    "upload_failed",
+]
 MetadataStatus = Literal["idle", "generating", "available", "unavailable"]
+YouTubeUploadStatus = Literal["idle", "uploading", "uploaded", "failed"]
 
 # Severity of a per-job log entry. INFO for normal progress, WARNING for
 # recoverable issues (e.g. a retried step), ERROR when the job fails.
@@ -140,3 +150,12 @@ class Job(BaseModel):
     # generating from unavailable without retry loops.
     has_metadata: bool = False
     metadata_status: MetadataStatus = "idle"
+    # YouTube upload state for the final workflow stage. Upload failures do not
+    # erase the processed output or metadata; they leave the job retryable.
+    youtube_upload_status: YouTubeUploadStatus = "idle"
+    youtube_video_id: str | None = None
+    youtube_video_url: str | None = None
+    youtube_uploaded_at: datetime | None = None
+    youtube_upload_error: str | None = None
+    upload_attempts: int = 0
+    cancel_requested: bool = False

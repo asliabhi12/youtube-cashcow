@@ -12,7 +12,8 @@ from ever moving backwards. This mirrors the product's weighted bands:
     trimming            25-35%
     creative profile    35-60%
     encoding            60-95%
-    finalizing          95-100%
+    finalizing          95-96%
+    uploading           96-100%
     completed           100%
 
 Only a percentage and a friendly status string ever leave this module; internal
@@ -59,6 +60,10 @@ _STEP_FAILED_LABEL: dict[str, str] = {
 # Terminal / lifecycle states not tied to a specific step.
 QUEUED = (0, "⏳ Waiting in queue...")
 COMPLETED = (100, "✅ Completed")
+UPLOAD_COMPLETE = (100, "✅ Uploaded to YouTube")
+UPLOAD_FAILED = (99, "❌ YouTube upload failed")
+CANCELLING = (0, "⏹️ Cancelling job...")
+CANCELLED = (0, "⏹️ Cancelled")
 
 
 def queued_status(position: int | None) -> str:

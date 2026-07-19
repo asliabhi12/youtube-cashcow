@@ -17,8 +17,11 @@ from app.models.job import Job, JobCreate, JobLogEntry, JobProgress
 from app.services import app_settings, profiles
 from app.services.job_logs import CLOSE, job_log_hub
 from app.services.jobs import job_store
+from app.services import job_progress
 from app.services.presets import is_quality
 from app.services.queue import job_queue
+from app.services.youtube_upload import YouTubeUploadError, youtube_upload_service
+from app.services.workflow import request_workflow_cancel
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -124,7 +127,7 @@ def delete_job(job_id: str) -> None:
     job = job_store.get(job_id)
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    if job.status == "running":
+    if job.status in {"running", "cancelling"}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="The running job can't be deleted; wait for it to finish.",
@@ -136,12 +139,92 @@ def delete_job(job_id: str) -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
 
+@router.post("/{job_id}/cancel", response_model=Job)
+def cancel_job(job_id: str) -> Job:
+    """Request cancellation for a queued or running workflow job."""
+    job = job_store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    if job.status == "cancelled":
+        return _with_queue_position(job)
+    if job.status in {"completed", "failed", "upload_failed"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Terminal jobs cannot be cancelled.",
+        )
+
+    original_status = job.status
+    updated = job_store.request_cancel(job_id)
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    if original_status == "queued":
+        job_queue.remove(job_id)
+        job_store.set_status(job_id, "cancelled")
+        _publish_progress(job_id, *job_progress.CANCELLED)
+        job_log_hub.append(job_id, "WARNING", "Job cancelled")
+        job_log_hub.close(job_id)
+    else:
+        _publish_progress(job_id, *job_progress.CANCELLING)
+        job_log_hub.append(job_id, "WARNING", "Cancellation requested")
+        request_workflow_cancel(job_id)
+
+    latest = job_store.get(job_id)
+    if latest is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    return _with_queue_position(latest)
+
+
+@router.post("/{job_id}/youtube/retry", response_model=Job)
+def retry_youtube_upload(job_id: str) -> Job:
+    """Retry only the final YouTube upload stage for a processed job."""
+    job = job_store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    if job.output_file is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Job has no processed output to upload",
+        )
+
+    job_store.clear_cancel_request(job_id)
+    job_store.set_status(job_id, "running")
+    try:
+        youtube_upload_service.upload_job(
+            job_id,
+            progress=lambda progress, message: _publish_progress(job_id, progress, message),
+            log=lambda level, message: job_log_hub.append(job_id, level, message),
+        )
+    except YouTubeUploadError as exc:
+        job_store.set_status(job_id, "upload_failed")
+        _publish_progress(job_id, *job_progress.UPLOAD_FAILED)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+    job_store.set_status(job_id, "completed")
+    _publish_progress(job_id, *job_progress.UPLOAD_COMPLETE)
+    latest = job_store.get(job_id)
+    if latest is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    return _with_queue_position(latest)
+
+
 @router.get("/{job_id}/logs", response_model=list[JobLogEntry])
 def get_job_logs(job_id: str) -> list[JobLogEntry]:
     """Return a job's log history, or 404 if the job does not exist."""
     if job_store.get(job_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     return job_log_hub.history(job_id)
+
+
+def _publish_progress(job_id: str, progress: int, status_message: str) -> None:
+    job = job_store.set_progress(job_id, progress, status_message)
+    if job is not None:
+        job_log_hub.publish_progress(
+            job_id, JobProgress(progress=job.progress, status=job.status_message)
+        )
 
 
 @router.get("/{job_id}/logs/events")

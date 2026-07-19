@@ -1,17 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Clipboard, Download, ExternalLink, RotateCw, ScrollText, X } from "lucide-react";
+import { Check, Clipboard, Download, ExternalLink, RotateCw, ScrollText, Square, UploadCloud, X } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { LogsDrawer } from "@/features/job-logs/logs-drawer";
 import {
   createJob,
+  cancelJob,
   deleteJob,
   fetchJobMetadata,
   jobDownloadUrl,
   jobLogsEventsUrl,
   listJobs,
+  retryYouTubeUpload,
   type Job,
   type JobMetadata,
   type JobStatus,
@@ -53,8 +55,11 @@ const STATUS_STYLES: Record<JobStatus, string> = {
   pending: "border-amber-500/40 text-amber-600 dark:text-amber-400",
   queued: "border-violet-500/40 text-violet-600 dark:text-violet-400",
   running: "border-sky-500/40 text-sky-600 dark:text-sky-400",
+  cancelling: "border-amber-500/40 text-amber-600 dark:text-amber-400",
+  cancelled: "border-muted-foreground/40 text-muted-foreground",
   completed: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
   failed: "border-red-500/40 text-red-600 dark:text-red-400",
+  upload_failed: "border-amber-500/40 text-amber-600 dark:text-amber-400",
 };
 
 export default function JobsPage() {
@@ -91,7 +96,8 @@ export default function JobsPage() {
       (job) =>
         job.status === "pending" ||
         job.status === "queued" ||
-        job.status === "running",
+        job.status === "running" ||
+        job.status === "cancelling",
     );
     if (!hasActive) {
       return;
@@ -123,6 +129,29 @@ export default function JobsPage() {
       await load();
     } catch {
       setActionError("Could not start the job. Is the server running?");
+    }
+  }
+
+  async function handleRetryUpload(job: Job): Promise<void> {
+    setActionError(null);
+    try {
+      await retryYouTubeUpload(job.id);
+      await load();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not retry the upload.");
+    }
+  }
+
+  async function handleCancel(job: Job): Promise<void> {
+    setActionError(null);
+    if (!window.confirm("Stop this job? Completed work will be preserved where possible.")) {
+      return;
+    }
+    try {
+      await cancelJob(job.id);
+      await load();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not stop the job.");
     }
   }
 
@@ -169,6 +198,8 @@ export default function JobsPage() {
           <JobSections
             jobs={state.jobs}
             onRerun={handleRerun}
+            onRetryUpload={handleRetryUpload}
+            onCancel={handleCancel}
             onRemove={handleRemove}
             onOpenLogs={setOpenJob}
             onRefresh={load}
@@ -214,43 +245,59 @@ function formatElapsedTime(startedAt: string | null, finishedAt: string | null, 
 function JobSections({
   jobs,
   onRerun,
+  onRetryUpload,
+  onCancel,
   onRemove,
   onOpenLogs,
   onRefresh,
 }: {
   jobs: Job[];
   onRerun: (job: Job) => void;
+  onRetryUpload: (job: Job) => void;
+  onCancel: (job: Job) => void;
   onRemove: (job: Job) => void;
   onOpenLogs: (job: Job) => void;
   onRefresh: () => void;
 }) {
   const running = jobs.filter((j) => j.status === "running" || j.status === "pending");
+  const cancelling = jobs.filter((j) => j.status === "cancelling");
   const queued = jobs
     .filter((j) => j.status === "queued")
     .sort((a, b) => (a.queue_position ?? 0) - (b.queue_position ?? 0));
   const completed = jobs.filter((j) => j.status === "completed");
-  const failed = jobs.filter((j) => j.status === "failed");
+  const cancelled = jobs.filter((j) => j.status === "cancelled");
+  const failed = jobs.filter((j) => j.status === "failed" || j.status === "upload_failed");
 
   return (
     <div className="flex flex-col gap-8">
       <Section title="Running" count={running.length}>
         {running.map((job) => (
-          <JobRow key={job.id} job={job} onRerun={onRerun} onRemove={onRemove} onOpenLogs={onOpenLogs} onRefresh={onRefresh} />
+          <JobRow key={job.id} job={job} onRerun={onRerun} onRetryUpload={onRetryUpload} onCancel={onCancel} onRemove={onRemove} onOpenLogs={onOpenLogs} onRefresh={onRefresh} />
+        ))}
+      </Section>
+      <Section title="Cancelling" count={cancelling.length}>
+        {cancelling.map((job) => (
+          <JobRow key={job.id} job={job} onRerun={onRerun} onRetryUpload={onRetryUpload} onCancel={onCancel} onRemove={onRemove} onOpenLogs={onOpenLogs} onRefresh={onRefresh} />
         ))}
       </Section>
       <Section title="Queued" count={queued.length}>
         {queued.map((job) => (
-          <JobRow key={job.id} job={job} onRerun={onRerun} onRemove={onRemove} onOpenLogs={onOpenLogs} onRefresh={onRefresh} />
+          <JobRow key={job.id} job={job} onRerun={onRerun} onRetryUpload={onRetryUpload} onCancel={onCancel} onRemove={onRemove} onOpenLogs={onOpenLogs} onRefresh={onRefresh} />
         ))}
       </Section>
       <Section title="Completed" count={completed.length}>
         {completed.map((job) => (
-          <JobRow key={job.id} job={job} onRerun={onRerun} onRemove={onRemove} onOpenLogs={onOpenLogs} onRefresh={onRefresh} />
+          <JobRow key={job.id} job={job} onRerun={onRerun} onRetryUpload={onRetryUpload} onCancel={onCancel} onRemove={onRemove} onOpenLogs={onOpenLogs} onRefresh={onRefresh} />
+        ))}
+      </Section>
+      <Section title="Cancelled" count={cancelled.length}>
+        {cancelled.map((job) => (
+          <JobRow key={job.id} job={job} onRerun={onRerun} onRetryUpload={onRetryUpload} onCancel={onCancel} onRemove={onRemove} onOpenLogs={onOpenLogs} onRefresh={onRefresh} />
         ))}
       </Section>
       <Section title="Failed" count={failed.length}>
         {failed.map((job) => (
-          <JobRow key={job.id} job={job} onRerun={onRerun} onRemove={onRemove} onOpenLogs={onOpenLogs} onRefresh={onRefresh} />
+          <JobRow key={job.id} job={job} onRerun={onRerun} onRetryUpload={onRetryUpload} onCancel={onCancel} onRemove={onRemove} onOpenLogs={onOpenLogs} onRefresh={onRefresh} />
         ))}
       </Section>
     </div>
@@ -287,12 +334,16 @@ function Section({
 function JobRow({
   job: initialJob,
   onRerun,
+  onRetryUpload,
+  onCancel,
   onRemove,
   onOpenLogs,
   onRefresh,
 }: {
   job: Job;
   onRerun: (job: Job) => void;
+  onRetryUpload: (job: Job) => void;
+  onCancel: (job: Job) => void;
   onRemove: (job: Job) => void;
   onOpenLogs: (job: Job) => void;
   onRefresh: () => void;
@@ -300,11 +351,35 @@ function JobRow({
   const [liveProgress, setLiveProgress] = useState(initialJob.progress);
   const [liveStatus, setLiveStatus] = useState(initialJob.status_message);
   const [metadataState, setMetadataState] = useState<MetadataState>({ kind: "idle" });
+  const [busyAction, setBusyAction] = useState<"retry" | "cancel" | null>(null);
   const [now, setNow] = useState(() => new Date());
 
   const isQueued = initialJob.status === "queued";
-  const isRunning = initialJob.status === "running" || initialJob.status === "pending";
-  const isFinished = initialJob.status === "completed" || initialJob.status === "failed";
+  const isRunning =
+    initialJob.status === "running" ||
+    initialJob.status === "pending" ||
+    initialJob.status === "cancelling";
+  const canCancel =
+    initialJob.status === "running" ||
+    initialJob.status === "pending" ||
+    initialJob.status === "queued";
+  const isFinished =
+    initialJob.status === "completed" ||
+    initialJob.status === "failed" ||
+    initialJob.status === "upload_failed" ||
+    initialJob.status === "cancelled";
+
+  async function runBusy(
+    action: "retry" | "cancel",
+    callback: (job: Job) => void | Promise<void>,
+  ): Promise<void> {
+    setBusyAction(action);
+    try {
+      await callback(initialJob);
+    } finally {
+      setBusyAction(null);
+    }
+  }
 
   // Sync state if initialJob changes (e.g. from polling).
   useEffect(() => {
@@ -395,7 +470,11 @@ function JobRow({
   let borderGlow = "border-muted/60";
   let bgGradient = "from-background via-muted/5 to-muted/5";
 
-  if (initialJob.status === "running" || initialJob.status === "pending") {
+  if (
+    initialJob.status === "running" ||
+    initialJob.status === "pending" ||
+    initialJob.status === "cancelling"
+  ) {
     progressColor = "bg-gradient-to-r from-sky-500 via-indigo-500 to-violet-500";
     borderGlow = "border-sky-500/20 shadow-sm";
     bgGradient = "from-background via-sky-500/[0.01] to-indigo-500/[0.01]";
@@ -403,10 +482,18 @@ function JobRow({
     progressColor = "bg-emerald-500";
     borderGlow = "border-emerald-500/20";
     bgGradient = "from-background via-emerald-500/[0.01] to-background";
+  } else if (initialJob.status === "cancelled") {
+    progressColor = "bg-muted-foreground";
+    borderGlow = "border-muted-foreground/20";
+    bgGradient = "from-background via-muted/10 to-background";
   } else if (initialJob.status === "failed") {
     progressColor = "bg-red-500";
     borderGlow = "border-red-500/20";
     bgGradient = "from-background via-red-500/[0.01] to-background";
+  } else if (initialJob.status === "upload_failed") {
+    progressColor = "bg-amber-500";
+    borderGlow = "border-amber-500/20";
+    bgGradient = "from-background via-amber-500/[0.01] to-background";
   } else if (initialJob.status === "queued") {
     progressColor = "bg-violet-500/50";
     borderGlow = "border-violet-500/10";
@@ -503,7 +590,35 @@ function JobRow({
           </div>
 
           <div className="flex items-center gap-1.5">
-            {isFinished && (
+            {canCancel && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void runBusy("cancel", onCancel)}
+                disabled={busyAction !== null}
+                title="Stop this job"
+                className="h-8 text-xs px-2.5 text-amber-700 dark:text-amber-300"
+              >
+                <Square className="size-3.5" />
+                Stop
+              </Button>
+            )}
+
+            {initialJob.status === "upload_failed" && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void runBusy("retry", onRetryUpload)}
+                disabled={busyAction !== null}
+                title="Retry YouTube upload only"
+                className="h-8 text-xs px-2.5"
+              >
+                <UploadCloud className="size-3.5" />
+                {busyAction === "retry" ? "Retrying..." : "Retry Upload"}
+              </Button>
+            )}
+
+            {isFinished && initialJob.status !== "upload_failed" && (
               <Button size="sm" variant="ghost" onClick={() => onRerun(initialJob)} title="Re-run this URL" className="h-8 text-xs px-2.5">
                 <RotateCw className="size-3.5" />
                 Run

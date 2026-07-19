@@ -27,8 +27,17 @@ export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
  * Lifecycle state of a job. "queued" means it is waiting its turn in the FIFO
  * queue; only one job is ever "running" at a time.
  */
-export type JobStatus = "pending" | "queued" | "running" | "completed" | "failed";
+export type JobStatus =
+  | "pending"
+  | "queued"
+  | "running"
+  | "cancelling"
+  | "cancelled"
+  | "completed"
+  | "failed"
+  | "upload_failed";
 export type MetadataStatus = "idle" | "generating" | "available" | "unavailable";
+export type YouTubeUploadStatus = "idle" | "uploading" | "uploaded" | "failed";
 
 /** A processing job as returned by the backend. */
 export interface Job {
@@ -61,6 +70,13 @@ export interface Job {
   has_metadata: boolean;
   /** AI metadata generation state for completed jobs. */
   metadata_status: MetadataStatus;
+  /** YouTube upload state for the final workflow stage. */
+  youtube_upload_status: YouTubeUploadStatus;
+  youtube_video_id: string | null;
+  youtube_video_url: string | null;
+  youtube_uploaded_at: string | null;
+  youtube_upload_error: string | null;
+  upload_attempts: number;
 }
 
 /** A clip range in seconds. `end` must be greater than `start`. */
@@ -525,6 +541,28 @@ export async function deleteJob(jobId: string): Promise<void> {
     }
     throw new Error(`Failed to delete job: ${response.status}`);
   }
+}
+
+/** Request cooperative cancellation for a queued or running job. */
+export async function cancelJob(jobId: string): Promise<Job> {
+  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/cancel`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to cancel job: ${response.status}`);
+  }
+  return (await response.json()) as Job;
+}
+
+/** Retry only the YouTube upload stage for a processed job. */
+export async function retryYouTubeUpload(jobId: string): Promise<Job> {
+  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/youtube/retry`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to retry YouTube upload: ${response.status}`);
+  }
+  return (await response.json()) as Job;
 }
 
 /** Fetch a job's log history. Throws if the server is unreachable or non-OK. */

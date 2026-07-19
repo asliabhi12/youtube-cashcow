@@ -28,6 +28,7 @@ from app.services.ai.provider_factory import get_metadata_provider
 from app.services.jobs import job_store
 from app.services.metadata import metadata_service
 from app.services import workflow as workflow_module
+from app.services.youtube_upload import YouTubeUploadResult
 
 
 @pytest.fixture(autouse=True)
@@ -45,6 +46,24 @@ def job():
     yield created
     metadata_service.delete(created.id)
     job_store.delete(created.id)
+
+
+def _fake_successful_upload(job_id, progress, log):
+    uploaded_at = metadata_module.datetime.now(metadata_module.timezone.utc)
+    job_store.set_upload_started(job_id)
+    job_store.set_upload_result(
+        job_id,
+        "uploaded",
+        video_id="yt123",
+        video_url="https://www.youtube.com/watch?v=yt123",
+        uploaded_at=uploaded_at,
+    )
+    return YouTubeUploadResult(
+        video_id="yt123",
+        video_url="https://www.youtube.com/watch?v=yt123",
+        uploaded_at=uploaded_at,
+        privacy_status="private",
+    )
 
 
 def test_metadata_model_enforces_youtube_limits():
@@ -200,6 +219,7 @@ def test_create_job_receives_and_persists_title_seed(monkeypatch):
         submitted.update(kwargs)
 
     monkeypatch.setattr(jobs_api.job_queue, "submit", fake_submit)
+    monkeypatch.setattr(jobs_api.app_settings, "set_last_profile", lambda profile_id: None)
     client = TestClient(app)
     response = client.post(
         "/jobs",
@@ -458,6 +478,11 @@ def test_workflow_auto_generates_metadata_after_success(monkeypatch):
     monkeypatch.setattr(workflow_module, "PipelineRunner", FakeRunner)
     monkeypatch.setattr(workflow_module, "default_registry", lambda: object())
     monkeypatch.setattr(workflow_module, "HardenedDownloader", lambda settings: object())
+    monkeypatch.setattr(
+        workflow_module.youtube_upload_service,
+        "upload_job",
+        _fake_successful_upload,
+    )
 
     job = job_store.create("https://youtube.example/watch?v=auto")
     try:
@@ -468,6 +493,8 @@ def test_workflow_auto_generates_metadata_after_success(monkeypatch):
         assert latest.status == "completed"
         assert latest.has_metadata is True
         assert latest.metadata_status == "available"
+        assert latest.youtube_upload_status == "uploaded"
+        assert latest.youtube_video_id == "yt123"
         metadata = metadata_service.get(job.id)
         assert metadata is not None
         assert metadata.title
@@ -488,6 +515,11 @@ def test_workflow_metadata_failure_does_not_fail_completed_job(monkeypatch):
     monkeypatch.setattr(workflow_module, "default_registry", lambda: object())
     monkeypatch.setattr(workflow_module, "HardenedDownloader", lambda settings: object())
     monkeypatch.setattr(workflow_module.metadata_service, "generate", lambda job_id: None)
+    monkeypatch.setattr(
+        workflow_module.youtube_upload_service,
+        "upload_job",
+        _fake_successful_upload,
+    )
 
     job = job_store.create("https://youtube.example/watch?v=auto-fail")
     try:
@@ -515,6 +547,11 @@ def test_metadata_retrieval_after_automatic_generation(monkeypatch):
     monkeypatch.setattr(workflow_module, "PipelineRunner", FakeRunner)
     monkeypatch.setattr(workflow_module, "default_registry", lambda: object())
     monkeypatch.setattr(workflow_module, "HardenedDownloader", lambda settings: object())
+    monkeypatch.setattr(
+        workflow_module.youtube_upload_service,
+        "upload_job",
+        _fake_successful_upload,
+    )
 
     client = TestClient(app)
     job = job_store.create("https://youtube.example/watch?v=auto-get")

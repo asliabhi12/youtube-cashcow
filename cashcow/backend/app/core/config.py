@@ -92,3 +92,56 @@ def _parse_dotenv_line(line: str) -> tuple[str | None, str]:
     key = key.strip()
     value = value.strip().strip('"').strip("'")
     return (key or None), value
+
+
+class YouTubeUploadConfig:
+    """YouTube upload defaults and OAuth settings.
+
+    The default account is represented by OAuth client credentials plus a refresh
+    token. Keeping the account id explicit makes the service shape ready for
+    additional accounts later without adding user/account management now.
+    """
+
+    ACCOUNT_ID: Final[str] = os.getenv("YOUTUBE_ACCOUNT_ID", "default")
+    REDIRECT_URI: Final[str] = (
+        get_config_value("YOUTUBE_REDIRECT_URI")
+        or "http://localhost:8000/youtube/auth/callback"
+    )
+    TOKEN_URI: Final[str] = os.getenv(
+        "YOUTUBE_TOKEN_URI",
+        "https://oauth2.googleapis.com/token",
+    )
+    RESUMABLE_UPLOAD_URL: Final[str] = os.getenv(
+        "YOUTUBE_RESUMABLE_UPLOAD_URL",
+        "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+    )
+    PRIVACY_STATUS: Final[str] = os.getenv("YOUTUBE_PRIVACY_STATUS", "private")
+    CATEGORY_ID: Final[str] = os.getenv("YOUTUBE_CATEGORY_ID", "22")
+    MADE_FOR_KIDS: Final[bool] = _env_bool("YOUTUBE_MADE_FOR_KIDS", False)
+
+
+youtube_upload_config = YouTubeUploadConfig()
+
+
+def set_local_config_value(name: str, value: str) -> None:
+    """Persist one local secret/config value in the backend .env file.
+
+    This is intentionally small and only used for the MVP YouTube OAuth refresh
+    token. Environment variables still take precedence on reads.
+    """
+    path = _dotenv_paths()[0]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    rendered = f'{name}="{_escape_dotenv_value(value)}"'
+    for index, line in enumerate(lines):
+        key, _ = _parse_dotenv_line(line)
+        if key == name:
+            lines[index] = rendered
+            break
+    else:
+        lines.append(rendered)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _escape_dotenv_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
