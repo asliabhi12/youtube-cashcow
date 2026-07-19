@@ -87,6 +87,10 @@ body {
   font-feature-settings: "rlig" 1, "calt" 1;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 @utility animate-shimmer {
   animation: shimmer 2.5s infinite linear;
 }

@@ -8,7 +8,7 @@ export interface NavItem {
 
 /** Sidebar navigation entries, in display order. */
 export const NAV_ITEMS: readonly NavItem[] = [
-  { label: "Home", href: "/", icon: Home },
+  { label: "Dashboard", href: "/dashboard", icon: Home },
   { label: "Jobs", href: "/jobs", icon: ListChecks },
   { label: "Profiles", href: "/profiles", icon: Sparkles },
   { label: "Settings", href: "/settings", icon: Settings },

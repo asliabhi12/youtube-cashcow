@@ -20,7 +20,7 @@ import { useWorkflowForm } from "./use-workflow-form";
  *
  * Ctrl/Cmd+S saves the active profile from anywhere in the form.
  */
-export function WorkflowForm() {
+export function WorkflowForm({ isDemoMode = false }: { isDemoMode?: boolean }) {
   const form = useWorkflowForm();
   const { editor } = form;
 
@@ -146,8 +146,13 @@ export function WorkflowForm() {
       {form.error !== null && <p className="text-sm text-red-500">{form.error}</p>}
 
       <div className="flex justify-end">
-        <Button size="lg" disabled={!form.canRun} onClick={() => void form.submit()}>
-          {form.submitting ? "Running…" : "Run Workflow"}
+        <Button
+          size="lg"
+          disabled={!form.canRun || isDemoMode}
+          onClick={() => void form.submit()}
+          title={isDemoMode ? "Start the local backend to run workflows" : undefined}
+        >
+          {form.submitting ? "Running…" : isDemoMode ? "Backend Offline" : "Run Workflow"}
         </Button>
       </div>
     </div>

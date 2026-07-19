@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Copy, FilePlus2, Save, SaveAll, Trash2 } from "lucide-react";
 
+import { DemoModeBanner } from "@/components/demo-mode/demo-mode-banner";
+import { useDemoMode } from "@/components/demo-mode/use-demo-mode";
+
 import { Button } from "@/components/ui/button";
 import { ProfileEditor } from "@/features/profile-editor/profile-editor";
 import { useProfileEditor } from "@/features/profile-editor/use-profile-editor";
@@ -27,6 +30,7 @@ import { cn } from "@/lib/utils";
  * {@link useProfileEditor}. Ctrl/Cmd+S saves.
  */
 export default function ProfilesPage() {
+  const { isDemoMode } = useDemoMode();
   const editor = useProfileEditor();
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
   const [qualities, setQualities] = useState<Option[]>([]);
@@ -132,6 +136,14 @@ export default function ProfilesPage() {
         editor.newProfile();
       }
     }
+  }
+
+  if (isDemoMode) {
+    return (
+      <div className="mx-auto max-w-xl px-6 py-12">
+        <DemoModeBanner />
+      </div>
+    );
   }
 
   return (

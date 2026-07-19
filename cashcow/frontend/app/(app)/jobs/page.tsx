@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, Clipboard, Download, ExternalLink, RotateCw, ScrollText, Square, UploadCloud, X } from "lucide-react";
 
+import { DemoModeBanner } from "@/components/demo-mode/demo-mode-banner";
+import { useDemoMode } from "@/components/demo-mode/use-demo-mode";
+
 import { Button, buttonVariants } from "@/components/ui/button";
 import { LogsDrawer } from "@/features/job-logs/logs-drawer";
 import {
@@ -63,6 +66,7 @@ const STATUS_STYLES: Record<JobStatus, string> = {
 };
 
 export default function JobsPage() {
+  const { isDemoMode } = useDemoMode();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [openJob, setOpenJob] = useState<Job | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -166,6 +170,14 @@ export default function JobsPage() {
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Could not remove the job.");
     }
+  }
+
+  if (isDemoMode) {
+    return (
+      <div className="mx-auto max-w-xl px-6 py-12">
+        <DemoModeBanner />
+      </div>
+    );
   }
 
   return (

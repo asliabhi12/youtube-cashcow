@@ -1,15 +1,25 @@
-import { WorkflowForm } from "@/features/workflow-form/workflow-form";
+import { LandingNav } from "@/components/landing/nav";
+import { Hero } from "@/components/landing/hero";
+import { Stats } from "@/components/landing/stats";
+import { Features } from "@/components/landing/features";
+import { WorkflowSection } from "@/components/landing/workflow-section";
+import { TechStack } from "@/components/landing/tech-stack";
+import { Screenshots } from "@/components/landing/screenshots";
+import { OfflineFirst } from "@/components/landing/offline-first";
+import { LandingFooter } from "@/components/landing/footer";
 
-export default function HomePage() {
+export default function LandingPage() {
   return (
-    <div className="mx-auto max-w-xl px-6 py-12">
-      <h1 className="text-xl font-semibold tracking-tight">New Workflow</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Configure a creative profile, then run it through the pipeline.
-      </p>
-      <div className="mt-8">
-        <WorkflowForm />
-      </div>
+    <div className="min-h-screen bg-black">
+      <LandingNav />
+      <Hero />
+      <Stats />
+      <Features />
+      <WorkflowSection />
+      <TechStack />
+      <Screenshots />
+      <OfflineFirst />
+      <LandingFooter />
     </div>
   );
 }
