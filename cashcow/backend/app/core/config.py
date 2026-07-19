@@ -5,6 +5,7 @@ modules never carry hard-coded literals.
 """
 
 import os
+from pathlib import Path
 from typing import Final
 
 # Application version, surfaced by the /health endpoint.
@@ -52,3 +53,42 @@ class DownloaderConfig:
 
 
 downloader_config = DownloaderConfig()
+
+
+DEFAULT_GEMINI_MODEL: Final[str] = "gemini-2.5-flash"
+
+
+def get_config_value(name: str) -> str | None:
+    """Read an env var, falling back to local .env files."""
+    value = os.getenv(name)
+    if value:
+        return value
+    return _read_dotenv().get(name)
+
+
+def _read_dotenv() -> dict[str, str]:
+    values: dict[str, str] = {}
+    for path in _dotenv_paths():
+        if not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            key, value = _parse_dotenv_line(line)
+            if key and key not in values:
+                values[key] = value
+    return values
+
+
+def _dotenv_paths() -> list[Path]:
+    backend_root = Path(__file__).resolve().parents[2]
+    repo_root = Path(__file__).resolve().parents[4]
+    return [backend_root / ".env", repo_root / ".env"]
+
+
+def _parse_dotenv_line(line: str) -> tuple[str | None, str]:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        return None, ""
+    key, value = stripped.split("=", 1)
+    key = key.strip()
+    value = value.strip().strip('"').strip("'")
+    return (key or None), value

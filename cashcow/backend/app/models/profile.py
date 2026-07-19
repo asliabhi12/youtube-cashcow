@@ -17,6 +17,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+DEFAULT_METADATA_PROMPT = (
+    "Write a clear, searchable YouTube title and description with clean SEO, "
+    "natural language, and accurate tags."
+)
+
 # --- Resize ---------------------------------------------------------------
 
 # Named platform presets plus dimensional shorthands the engine's resize step
@@ -230,8 +235,10 @@ class ProfileInput(BaseModel):
     """Editable profile fields — the body of POST /profiles and PUT /profiles/{id}.
 
     A creative section left unset means that step is skipped for the profile
-    (matching the adapter's ``if "resize" in config`` gating). ``export_quality``
-    is an optional default the Home page pre-selects and may override per job.
+    (matching the adapter's ``if "resize" in config`` gating). ``metadata_prompt``
+    guides AI metadata generation for jobs created with the profile.
+    ``export_quality`` is an optional default the Home page pre-selects and may
+    override per job.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -242,6 +249,7 @@ class ProfileInput(BaseModel):
     audio: AudioConfig | None = None
     color: ColorConfig | None = None
     overlay: OverlayConfig | None = None
+    metadata_prompt: str = Field(default=DEFAULT_METADATA_PROMPT, min_length=1)
     # Validated against presets.is_quality() at the service layer, where the
     # quality catalogue lives; kept as a plain string here to avoid a cycle.
     export_quality: str | None = None

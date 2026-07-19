@@ -4,6 +4,10 @@
 label: Gaming
 description: >-
   High-energy: sharp, saturated colours, punchy bass, and an overlay.
+metadata_prompt: >-
+  Write an exciting, high-energy gaming YouTube title and description emphasizing
+  the gameplay, stakes, reactions, and entertainment value with natural SEO
+  keywords.
 
 audio:
   effects:

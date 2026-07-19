@@ -128,6 +128,11 @@ Copy the environment file template to local configuration:
 cp .env.example .env
 ```
 
+Automatic AI metadata generation uses Google Gemini. Set `GEMINI_API_KEY` in
+`.env` to enable it; optionally set `GEMINI_MODEL` to override the default model
+(`gemini-2.5-flash`). If `GEMINI_API_KEY` is missing, the app still starts and
+logs that AI metadata generation is disabled.
+
 ---
 
 ## 💻 CLI Commands

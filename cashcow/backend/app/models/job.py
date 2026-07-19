@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 # it, then either "completed" or "failed" once the pipeline finishes. Only one
 # job is ever "running" at a time.
 JobStatus = Literal["pending", "queued", "running", "completed", "failed"]
+MetadataStatus = Literal["idle", "generating", "available", "unavailable"]
 
 # Severity of a per-job log entry. INFO for normal progress, WARNING for
 # recoverable issues (e.g. a retried step), ERROR when the job fails.
@@ -26,6 +27,19 @@ class JobLogEntry(BaseModel):
     timestamp: datetime
     level: JobLogLevel
     message: str
+
+
+class JobProgress(BaseModel):
+    """A live overall-progress update streamed to the UI.
+
+    Carries only the single 0-100 percentage for the whole job and a friendly
+    status line describing the current operation — never internal pipeline step
+    names. Delivered over the same SSE stream as log entries; the ``progress``
+    event name distinguishes the two client-side.
+    """
+
+    progress: int = Field(ge=0, le=100)
+    status: str
 
 
 class TrimRange(BaseModel):
@@ -70,6 +84,12 @@ class JobCreate(BaseModel):
     export_quality: str = Field(
         default="balanced", description="Export quality slug (see GET /export-qualities)."
     )
+    title_seed: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+        description="Starting idea for AI-generated YouTube metadata.",
+    )
 
     @property
     def effective_profile_id(self) -> str:
@@ -85,9 +105,24 @@ class Job(BaseModel):
     url: str
     status: JobStatus
     created_at: datetime
+    # When the job actually started running (left the queue), and when it
+    # reached a terminal state. Both None until they happen; used by the UI to
+    # show a live elapsed timer that excludes time spent waiting in the queue.
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
     # The creative profile this job was created with, echoed back for display.
     profile_id: str = "custom"
     export_quality: str = "balanced"
+    # Optional user-supplied starting idea for AI-generated metadata. Stored on
+    # the job so automatic post-processing metadata generation can use it later.
+    title_seed: str | None = None
+    # Overall job progress as a single 0-100 percentage, and a friendly,
+    # human-readable status line describing the current operation (e.g.
+    # "🎬 Encoding video..."). Progress only moves forward; on failure it freezes
+    # at the last value reached. These are the only progress details exposed —
+    # no internal pipeline step names leak through.
+    progress: int = 0
+    status_message: str = "⏳ Waiting in queue..."
     # Populated from the workflow result once it finishes: the produced file on
     # success, or the failure detail on error. Both stay None while pending or
     # running.
@@ -100,3 +135,8 @@ class Job(BaseModel):
     # 1-based place in the FIFO queue while the job is "queued"; None otherwise.
     # Computed fresh for each response from the live queue, never stored.
     queue_position: int | None = None
+    # AI metadata generation status. ``has_metadata`` is retained as a compact
+    # boolean for older clients; ``metadata_status`` lets the UI distinguish
+    # generating from unavailable without retry loops.
+    has_metadata: bool = False
+    metadata_status: MetadataStatus = "idle"

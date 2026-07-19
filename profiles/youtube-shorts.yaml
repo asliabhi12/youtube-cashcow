@@ -4,6 +4,10 @@
 label: YouTube Shorts
 description: >-
   Punchy vertical look: zoomed 9:16, boosted audio, vivid grade, and an overlay.
+metadata_prompt: >-
+  Write a concise, high-CTR YouTube Shorts title and description that captures
+  the strongest hook quickly while staying accurate and avoiding excessive
+  clickbait.
 
 resize:
   preset: shorts

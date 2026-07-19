@@ -62,3 +62,17 @@ npm run dev:frontend
 ```
 
 The dashboard header shows **🟢 Server Running** when it can reach the backend, **🔴 Server Offline** otherwise.
+
+## AI Metadata
+
+Automatic YouTube title, description, and tag generation uses Google Gemini.
+Add a Gemini API key to `.env` before starting the backend:
+
+```bash
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+`GEMINI_API_KEY` is required for AI metadata generation. If it is not
+configured, the backend still starts and logs that metadata generation is
+disabled.

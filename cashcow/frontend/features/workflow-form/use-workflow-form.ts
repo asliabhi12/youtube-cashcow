@@ -29,6 +29,9 @@ export interface WorkflowFormState {
   url: string;
   setUrl: (url: string) => void;
 
+  titleSeed: string;
+  setTitleSeed: (titleSeed: string) => void;
+
   trim: { start: number; end: number };
   setTrim: (range: { start: number; end: number }) => void;
   maxDuration: number;
@@ -81,6 +84,7 @@ export function useWorkflowForm(): WorkflowFormState {
   const editor = useProfileEditor();
 
   const [url, setUrl] = useState("");
+  const [titleSeed, setTitleSeed] = useState("");
   const [trim, setTrim] = useState({ start: DEFAULT_START, end: DEFAULT_END });
   const [maxDuration, setMaxDuration] = useState(FALLBACK_MAX_SECONDS);
 
@@ -304,6 +308,7 @@ export function useWorkflowForm(): WorkflowFormState {
 
       await createJob({
         url: trimmedUrl,
+        title_seed: titleSeed.trim() || undefined,
         trim: { start: trim.start, end: trim.end },
         profile_id: runId,
         export_quality: exportQuality,
@@ -313,11 +318,13 @@ export function useWorkflowForm(): WorkflowFormState {
       setError("Could not create the job. Is the server running?");
       setSubmitting(false);
     }
-  }, [trimmedUrl, submitting, editor, trim, exportQuality, reloadProfiles, router]);
+  }, [trimmedUrl, titleSeed, submitting, editor, trim, exportQuality, reloadProfiles, router]);
 
   return {
     url,
     setUrl,
+    titleSeed,
+    setTitleSeed,
     trim,
     setTrim,
     maxDuration,

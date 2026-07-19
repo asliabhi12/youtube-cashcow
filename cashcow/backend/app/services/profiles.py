@@ -8,12 +8,12 @@ root:
 * ``profiles/custom/*.yaml`` — **user** profiles. Fully editable and deletable.
 
 A profile's id is its filename stem. Each file stores only editable creative
-parameters (``resize`` / ``audio`` / ``color`` / ``overlay``) plus display
-metadata (``label`` / ``description``) and an optional ``export_quality``
-default — never workflow steps. This module is the single source of truth for
-the profile list; the workflow adapter consumes :func:`resolve_config` to inject
-a profile's parameters into the fixed pipeline, exactly where the old static
-``presets.preset_config`` was used.
+parameters (``resize`` / ``audio`` / ``color`` / ``overlay``), metadata-generation
+guidance (``metadata_prompt``), display metadata (``label`` / ``description``),
+and an optional ``export_quality`` default — never workflow steps. This module is
+the single source of truth for the profile list; the workflow adapter consumes
+:func:`resolve_config` to inject a profile's parameters into the fixed pipeline,
+exactly where the old static ``presets.preset_config`` was used.
 
 Writes validate through the pydantic models first, then serialize atomically
 (temp file + ``os.replace``) under a module lock, so a concurrent read never

@@ -62,6 +62,23 @@ export function WorkflowForm() {
         )}
       </div>
 
+      {/* Title seed */}
+      <div className="flex flex-col gap-2">
+        <label htmlFor="title-seed" className="text-sm font-medium">
+          Title Seed
+        </label>
+        <Input
+          id="title-seed"
+          placeholder="e.g. Epic Ride Through Mumbai"
+          value={form.titleSeed}
+          disabled={form.submitting}
+          onChange={(event) => form.setTitleSeed(event.target.value)}
+        />
+        <p className="text-xs text-muted-foreground">
+          This is the starting idea for the AI-generated YouTube title.
+        </p>
+      </div>
+
       {/* Trim */}
       <div className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between">

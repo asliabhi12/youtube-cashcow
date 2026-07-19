@@ -28,6 +28,7 @@ export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
  * queue; only one job is ever "running" at a time.
  */
 export type JobStatus = "pending" | "queued" | "running" | "completed" | "failed";
+export type MetadataStatus = "idle" | "generating" | "available" | "unavailable";
 
 /** A processing job as returned by the backend. */
 export interface Job {
@@ -36,10 +37,18 @@ export interface Job {
   status: JobStatus;
   /** ISO 8601 timestamp of when the job was created. */
   created_at: string;
+  /** ISO 8601 timestamp of when the job actually started running; null otherwise. */
+  started_at: string | null;
+  /** ISO 8601 timestamp of when the job reached a terminal state; null otherwise. */
+  finished_at: string | null;
   /** Creative profile id the job was created with. */
   profile_id: string;
   /** Export-quality slug the job was created with. */
   export_quality: string;
+  /** Overall progress percentage (0-100). */
+  progress: number;
+  /** Friendly, human-readable status line describing current operation. */
+  status_message: string;
   /** Path to the produced file once the workflow completes; null otherwise. */
   output_file: string | null;
   /** Title-derived download filename, once the video title is known; null otherwise. */
@@ -48,6 +57,10 @@ export interface Job {
   error: string | null;
   /** 1-based place in the FIFO queue while "queued"; null otherwise. */
   queue_position: number | null;
+  /** Whether AI metadata has been generated and stored for this job. */
+  has_metadata: boolean;
+  /** AI metadata generation state for completed jobs. */
+  metadata_status: MetadataStatus;
 }
 
 /** A clip range in seconds. `end` must be greater than `start`. */
@@ -70,9 +83,21 @@ export interface VideoMetadata {
   duration: number | null;
 }
 
+/** AI-generated YouTube metadata stored for a completed job. */
+export interface JobMetadata {
+  title: string;
+  description: string;
+  tags: string[];
+  generated_at: string;
+  provider: string;
+  model: string;
+  editable: boolean;
+}
+
 /** Body for creating a job: a URL plus its creative profile. */
 export interface CreateJobInput {
   url: string;
+  title_seed?: string;
   trim?: TrimRange;
   profile_id: string;
   export_quality: string;
@@ -466,6 +491,23 @@ export async function getJob(jobId: string, signal?: AbortSignal): Promise<Job> 
   }
 
   return (await response.json()) as Job;
+}
+
+/** Fetch generated AI metadata for a job. Throws on 404/unavailable. */
+export async function fetchJobMetadata(
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<JobMetadata> {
+  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/metadata`, {
+    signal,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load job metadata: ${response.status}`);
+  }
+
+  return (await response.json()) as JobMetadata;
 }
 
 /**

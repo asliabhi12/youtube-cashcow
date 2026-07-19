@@ -4,6 +4,9 @@
 label: Cinematic
 description: >-
   Filmic grade: gentle contrast, slightly desaturated and warm. Clean audio, no overlay.
+metadata_prompt: >-
+  Write a cinematic, emotional YouTube title and description with premium
+  storytelling, clean SEO, and an immersive tone.
 
 audio:
   effects:

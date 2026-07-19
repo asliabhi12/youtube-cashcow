@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse, StreamingResponse
 
-from app.models.job import Job, JobCreate, JobLogEntry
+from app.models.job import Job, JobCreate, JobLogEntry, JobProgress
 from app.services import app_settings, profiles
 from app.services.job_logs import CLOSE, job_log_hub
 from app.services.jobs import job_store
@@ -73,6 +73,7 @@ def create_job(payload: JobCreate) -> Job:
         payload.url,
         profile_id=profile_id,
         export_quality=payload.export_quality,
+        title_seed=payload.title_seed,
     )
     # Remember this as the last-used profile so the Home page can re-open it.
     # Best-effort: a settings write failure must never fail the job.
@@ -156,14 +157,19 @@ async def stream_job_logs(job_id: str) -> StreamingResponse:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
     loop = asyncio.get_running_loop()
-    # Snapshot history and subscribe atomically so no entry is missed between
-    # the two, and none is delivered twice.
-    snapshot, queue = job_log_hub.subscribe(job_id, loop)
+    # Snapshot history plus the latest progress and subscribe atomically, so no
+    # entry is missed between the two and none is delivered twice.
+    snapshot, progress, queue = job_log_hub.subscribe(job_id, loop)
 
     async def event_stream() -> AsyncIterator[str]:
         try:
             for entry in snapshot:
                 yield _sse(entry.model_dump_json())
+            # Replay the current progress bar (if any) right after the backlog,
+            # so a client joining mid-run renders the live percentage at once
+            # rather than waiting for the next update.
+            if progress is not None:
+                yield _sse(progress.model_dump_json(), event="progress")
             while True:
                 item = await queue.get()
                 if item is CLOSE:
@@ -171,7 +177,12 @@ async def stream_job_logs(job_id: str) -> StreamingResponse:
                     # stops reconnecting, then end the generator.
                     yield _sse(json.dumps({"job_id": job_id}), event="end")
                     return
-                yield _sse(item.model_dump_json())
+                if isinstance(item, JobProgress):
+                    # A named "progress" event so the client can tell overall
+                    # progress apart from log lines on the one stream.
+                    yield _sse(item.model_dump_json(), event="progress")
+                else:
+                    yield _sse(item.model_dump_json())
         finally:
             # Always drop the subscription, whether the job closed the stream or
             # the client disconnected mid-stream.
