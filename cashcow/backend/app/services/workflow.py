@@ -33,6 +33,7 @@ from src.pipeline.context import PipelineContext  # noqa: E402
 from src.pipeline.models import StepRecord  # noqa: E402
 
 from app.models.job import TrimRange  # noqa: E402
+from app.services import assets  # noqa: E402
 from app.services.job_logs import job_log_hub  # noqa: E402
 from app.services.jobs import job_store  # noqa: E402
 from app.services.presets import quality_overrides  # noqa: E402
@@ -40,9 +41,6 @@ from app.services.profiles import resolve_config  # noqa: E402
 
 _SETTINGS_FILE = _PROJECT_ROOT / "settings.yaml"
 _OUTPUT_DIRNAME = "output"
-# Overlay assets bundled with the repo. Preset overlay configs reference an asset
-# by bare filename; it is resolved against this directory to an absolute path.
-_OVERLAY_ASSET_DIR = _PROJECT_ROOT / "assets" / "overlays"
 
 # Human-readable log lines for each engine step, keyed by step name. Unknown
 # steps fall back to a generic message built from the step name, so a new step
@@ -190,15 +188,21 @@ def _build_workflow(
 
 
 def _overlay_options(overlay: dict) -> dict:
-    """Resolve a preset overlay config's ``asset`` to an absolute engine path.
+    """Resolve a profile overlay config's ``asset`` to an absolute engine path.
 
-    Preset configs reference a bundled overlay by bare filename (``asset``); the
+    Profile configs reference an overlay by bare filename (``asset``); the
     engine's overlay step and its file-existence validator expect a ``source``
-    path. Resolving to an absolute path here means the workflow validator's file
-    check passes regardless of the server's working directory.
+    path. The assets service resolves the name across the bundled and user
+    directories to an absolute path, so the workflow validator's file check
+    passes regardless of the server's working directory. A name that no longer
+    resolves (e.g. a since-deleted upload) raises, failing the job cleanly
+    rather than passing the engine a path that does not exist.
     """
     options = {key: value for key, value in overlay.items() if key != "asset"}
-    options["source"] = str(_OVERLAY_ASSET_DIR / overlay["asset"])
+    resolved = assets.resolve_path(overlay["asset"])
+    if resolved is None:
+        raise FileNotFoundError(f"overlay asset '{overlay['asset']}' not found")
+    options["source"] = str(resolved)
     return options
 
 

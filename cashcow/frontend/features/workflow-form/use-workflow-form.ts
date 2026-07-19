@@ -5,16 +5,16 @@ import { useRouter } from "next/navigation";
 
 import {
   createJob,
-  createProfile,
-  deleteProfile,
-  duplicateProfile,
   fetchAppSettings,
   fetchExportQualities,
+  fetchProfile,
   fetchProfiles,
   fetchVideoMetadata,
   type Option,
   type ProfileSummary,
 } from "@/lib/api";
+
+import { useProfileEditor, type ProfileEditorState } from "@/features/profile-editor/use-profile-editor";
 
 /** Fallback slider max (seconds) when the video duration is unknown. */
 const FALLBACK_MAX_SECONDS = 600;
@@ -33,11 +33,12 @@ export interface WorkflowFormState {
   setTrim: (range: { start: number; end: number }) => void;
   maxDuration: number;
 
+  /** Full profile editor — the single source of truth for the active profile. */
+  editor: ProfileEditorState;
+  /** Profile summaries for the selector (built-ins first). */
   profiles: ProfileSummary[];
-  profileId: string;
-  setProfileId: (value: string) => void;
-  /** Whether the selected profile is a read-only built-in. */
-  isBuiltinProfile: boolean;
+  /** Load a profile into the editor (used by the selector). */
+  selectProfile: (id: string) => Promise<void>;
 
   qualities: Option[];
   exportQuality: string;
@@ -48,8 +49,8 @@ export interface WorkflowFormState {
   /** True while the metadata lookup is in flight. */
   loadingMetadata: boolean;
 
-  /** Profile actions. Milestone A operates on the selected profile as a whole. */
-  newProfile: () => Promise<void>;
+  /** Profile actions, delegated to the editor then reflected in the list. */
+  newProfile: () => void;
   saveProfile: () => Promise<void>;
   saveProfileAs: () => Promise<void>;
   removeProfile: () => Promise<void>;
@@ -63,26 +64,27 @@ export interface WorkflowFormState {
 /**
  * State and side effects for the Home page's workflow configuration form.
  *
- * On mount it loads the creative-profile list, the export-quality options, and
- * the app settings — pre-selecting the last-used profile so the page reopens
- * where the user left off. As the URL changes it looks up the video's
- * duration/title (debounced) so the trim slider spans the real clip, falling
- * back to a fixed maximum when the lookup fails. Submitting posts the full
- * creative profile (url, trim, profile id, export quality) and routes to Jobs.
+ * The active creative profile is owned by an embedded {@link useProfileEditor},
+ * so the selector, the field editor, and job submission all read one source of
+ * truth. On mount it loads the profile list, export qualities, and app settings,
+ * then opens the last-used profile (falling back to the first). As the URL
+ * changes it looks up the video's duration/title (debounced) for the trim
+ * slider.
  *
- * Profile management (New / Save As / Delete) lives here in Milestone A because
- * there is no field-level editor yet; Milestone B introduces a dedicated
- * `useProfileEditor` hook for editing individual parameters.
+ * Because a job carries only a `profile_id` (never inline config), unsaved edits
+ * must be persisted before a run: a dirty custom profile is saved in place, a
+ * dirty built-in is "saved as" a new custom profile (the engine never sees a
+ * transient, only a stored profile), and a clean selection runs as-is.
  */
 export function useWorkflowForm(): WorkflowFormState {
   const router = useRouter();
+  const editor = useProfileEditor();
 
   const [url, setUrl] = useState("");
   const [trim, setTrim] = useState({ start: DEFAULT_START, end: DEFAULT_END });
   const [maxDuration, setMaxDuration] = useState(FALLBACK_MAX_SECONDS);
 
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
-  const [profileId, setProfileId] = useState("");
   const [qualities, setQualities] = useState<Option[]>([]);
   const [exportQuality, setExportQuality] = useState(DEFAULT_QUALITY);
 
@@ -91,11 +93,17 @@ export function useWorkflowForm(): WorkflowFormState {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isBuiltinProfile =
-    profiles.find((p) => p.id === profileId)?.builtin ?? false;
+  // Pull a profile's export-quality default into the form's quality selection,
+  // so the per-job quality starts where the profile suggests but stays free to
+  // override.
+  const applyProfileQuality = useCallback((quality: string | null | undefined) => {
+    if (quality) {
+      setExportQuality(quality);
+    }
+  }, []);
 
   // Load profiles, export qualities, and the last-used profile once. If a fetch
-  // fails, the selectors stay empty; the page still renders and defaults apply.
+  // fails, the form still renders with defaults.
   useEffect(() => {
     const controller = new AbortController();
     void (async () => {
@@ -107,24 +115,33 @@ export function useWorkflowForm(): WorkflowFormState {
         ]);
         setProfiles(profileList);
         setQualities(q);
-        // Prefer the last-used profile when it still resolves; else first item.
         const last = settings.last_profile;
         const initial =
           (last !== null && profileList.some((p) => p.id === last) ? last : undefined) ??
           profileList[0]?.id ??
           "";
-        setProfileId(initial);
+        if (initial !== "") {
+          await editor.loadProfile(initial);
+          // Seed the quality from the freshly-loaded profile's default.
+          try {
+            const full = await fetchProfile(initial, controller.signal);
+            applyProfileQuality(full.export_quality);
+          } catch {
+            // Non-fatal; keep the default quality.
+          }
+        }
       } catch {
         // Ignore; defaults still apply.
       }
     })();
     return () => controller.abort();
+    // editor.loadProfile is stable (useCallback); run once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const trimmedUrl = url.trim();
 
-  // Debounced metadata lookup keyed on the URL. Sets the slider max to the real
-  // duration on success; falls back silently otherwise.
+  // Debounced metadata lookup keyed on the URL.
   useEffect(() => {
     if (trimmedUrl.length === 0) {
       setVideoTitle(null);
@@ -142,7 +159,6 @@ export function useWorkflowForm(): WorkflowFormState {
           if (meta.duration !== null && meta.duration > 0) {
             const duration = Math.round(meta.duration);
             setMaxDuration(duration);
-            // Clamp the current selection into the real duration.
             setTrim((prev) => {
               const end = Math.min(prev.end, duration);
               const start = Math.min(prev.start, Math.max(0, end - 1));
@@ -150,7 +166,6 @@ export function useWorkflowForm(): WorkflowFormState {
             });
           }
         } catch {
-          // Invalid URL or blocked upstream: keep the fallback max.
           setVideoTitle(null);
           setMaxDuration(FALLBACK_MAX_SECONDS);
         } finally {
@@ -167,90 +182,130 @@ export function useWorkflowForm(): WorkflowFormState {
     };
   }, [trimmedUrl]);
 
-  // Reload the profile list and select a specific id (used after mutations).
-  const reloadProfiles = useCallback(async (selectId?: string): Promise<void> => {
+  const reloadProfiles = useCallback(async (): Promise<ProfileSummary[]> => {
     const list = await fetchProfiles();
     setProfiles(list);
-    if (selectId !== undefined && list.some((p) => p.id === selectId)) {
-      setProfileId(selectId);
-    }
+    return list;
   }, []);
 
-  const newProfile = useCallback(async (): Promise<void> => {
-    const label = window.prompt("Name for the new profile:")?.trim();
-    if (!label) {
+  // Switch the editor to a different profile. Guards against silently dropping
+  // unsaved edits.
+  const selectProfile = useCallback(
+    async (id: string): Promise<void> => {
+      if (id === editor.activeId) {
+        return;
+      }
+      if (
+        editor.dirty &&
+        !window.confirm("Discard unsaved changes to the current profile?")
+      ) {
+        return;
+      }
+      await editor.loadProfile(id);
+      try {
+        const full = await fetchProfile(id);
+        applyProfileQuality(full.export_quality);
+      } catch {
+        // Non-fatal.
+      }
+    },
+    [editor, applyProfileQuality],
+  );
+
+  const newProfile = useCallback(() => {
+    if (editor.dirty && !window.confirm("Discard unsaved changes?")) {
       return;
     }
+    editor.newProfile();
+  }, [editor]);
+
+  const saveProfile = useCallback(async (): Promise<void> => {
     setError(null);
-    try {
-      // A fresh profile carries no creative sections — the bare pipeline —
-      // ready for Milestone B's editor to fill in.
-      const created = await createProfile({ label });
-      await reloadProfiles(created.id);
-    } catch {
-      setError("Could not create the profile.");
+    // A built-in can't be overwritten; saving it creates a copy instead.
+    if (editor.isBuiltin) {
+      await saveProfileAs();
+      return;
     }
-  }, [reloadProfiles]);
+    const id = await editor.save();
+    if (id !== null) {
+      await reloadProfiles();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, reloadProfiles]);
 
   const saveProfileAs = useCallback(async (): Promise<void> => {
-    if (profileId === "") {
-      return;
-    }
-    const label = window.prompt("Name for the new profile:")?.trim();
+    const label = window.prompt("Name for the new profile:", editor.draft.label)?.trim();
     if (!label) {
       return;
     }
     setError(null);
-    try {
-      const created = await duplicateProfile(profileId, label);
-      await reloadProfiles(created.id);
-    } catch {
-      setError("Could not save the profile.");
+    const id = await editor.saveAs(label);
+    if (id !== null) {
+      await reloadProfiles();
     }
-  }, [profileId, reloadProfiles]);
-
-  // In Milestone A there is no field editor, so "Save" on a built-in is not
-  // shown and on a custom profile there is nothing changed to persist yet;
-  // Save As covers creating a copy. This becomes a real update in Milestone B.
-  const saveProfile = useCallback(async (): Promise<void> => {
-    if (isBuiltinProfile) {
-      await saveProfileAs();
-    }
-    // Custom profile: no editable field state in Milestone A — no-op.
-  }, [isBuiltinProfile, saveProfileAs]);
+  }, [editor, reloadProfiles]);
 
   const removeProfile = useCallback(async (): Promise<void> => {
-    if (profileId === "" || isBuiltinProfile) {
+    if (editor.activeId === null || editor.isBuiltin) {
       return;
     }
-    const summary = profiles.find((p) => p.id === profileId);
-    if (!window.confirm(`Delete profile "${summary?.label ?? profileId}"?`)) {
+    const label = profiles.find((p) => p.id === editor.activeId)?.label ?? editor.draft.label;
+    if (!window.confirm(`Delete profile "${label}"?`)) {
       return;
     }
     setError(null);
-    try {
-      await deleteProfile(profileId);
-      const list = await fetchProfiles();
-      setProfiles(list);
-      setProfileId(list[0]?.id ?? "");
-    } catch {
-      setError("Could not delete the profile.");
+    const ok = await editor.remove();
+    if (ok) {
+      const list = await reloadProfiles();
+      const next = list[0]?.id ?? "";
+      if (next !== "") {
+        await editor.loadProfile(next);
+      } else {
+        editor.newProfile();
+      }
     }
-  }, [profileId, isBuiltinProfile, profiles]);
+  }, [editor, profiles, reloadProfiles]);
 
-  const canRun = trimmedUrl.length > 0 && profileId !== "" && !submitting;
+  const canRun = trimmedUrl.length > 0 && !submitting && !editor.saving;
 
   const submit = useCallback(async () => {
-    if (trimmedUrl.length === 0 || profileId === "" || submitting) {
+    if (trimmedUrl.length === 0 || submitting) {
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
+      // Ensure the engine runs a *stored* profile. Persist any unsaved edits
+      // first, since a job carries only a profile id.
+      let runId = editor.activeId;
+      if (editor.dirty || runId === null) {
+        if (editor.isBuiltin) {
+          // Built-ins are read-only: an edited built-in must become a copy.
+          const label = window.prompt(
+            "You edited a built-in profile. Save changes as a new profile named:",
+            `${editor.draft.label} (edited)`,
+          )?.trim();
+          if (!label) {
+            setSubmitting(false);
+            return;
+          }
+          runId = await editor.saveAs(label);
+        } else {
+          runId = await editor.save();
+        }
+        if (runId === null) {
+          // Validation failed; the editor surfaces the issue inline.
+          setError("Fix the highlighted profile settings before running.");
+          setSubmitting(false);
+          return;
+        }
+        await reloadProfiles();
+      }
+
       await createJob({
         url: trimmedUrl,
         trim: { start: trim.start, end: trim.end },
-        profile_id: profileId,
+        profile_id: runId,
         export_quality: exportQuality,
       });
       router.push("/jobs");
@@ -258,7 +313,7 @@ export function useWorkflowForm(): WorkflowFormState {
       setError("Could not create the job. Is the server running?");
       setSubmitting(false);
     }
-  }, [trimmedUrl, profileId, submitting, trim, exportQuality, router]);
+  }, [trimmedUrl, submitting, editor, trim, exportQuality, reloadProfiles, router]);
 
   return {
     url,
@@ -266,10 +321,9 @@ export function useWorkflowForm(): WorkflowFormState {
     trim,
     setTrim,
     maxDuration,
+    editor,
     profiles,
-    profileId,
-    setProfileId,
-    isBuiltinProfile,
+    selectProfile,
     qualities,
     exportQuality,
     setExportQuality,

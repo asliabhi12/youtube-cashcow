@@ -73,17 +73,144 @@ export interface CreateJobInput {
   export_quality: string;
 }
 
+/**
+ * Named platform presets and dimensional shorthands the engine's resize step
+ * accepts. Mirrors `ResizePreset` in the backend profile model.
+ */
+export type ResizePreset =
+  | "youtube"
+  | "shorts"
+  | "tiktok"
+  | "instagram"
+  | "1080x1920"
+  | "1920x1080"
+  | "1080x1080"
+  | "720p"
+  | "4k";
+
+/** Resize options: a named preset OR explicit width+height, plus zoom/padding. */
+export interface ResizeConfig {
+  preset?: ResizePreset | null;
+  width?: number | null;
+  height?: number | null;
+  /** Centred punch-in; >= 1.0 (1.0 is a no-op). */
+  zoom?: number | null;
+  /** Letterbox to the target instead of cropping. */
+  padding?: boolean | null;
+}
+
+/** The nine audio-effect types the engine implements. */
+export type AudioEffectType =
+  | "normalize"
+  | "volume"
+  | "bass"
+  | "treble"
+  | "speed"
+  | "pitch"
+  | "deep_voice"
+  | "chipmunk"
+  | "echo";
+
+/**
+ * A single audio effect in a chain. Only the fields relevant to `type` should
+ * be set; ranges mirror the engine (gain -60..60 dB, factor 0.5..100,
+ * semitones -24..24, delay ms > 0, decay 0..1).
+ */
+export interface AudioEffectItem {
+  type: AudioEffectType;
+  gain?: number | null;
+  factor?: number | null;
+  semitones?: number | null;
+  delay?: number | null;
+  decay?: number | null;
+}
+
+/** A chain of audio effects, applied in order. */
+export interface AudioConfig {
+  effects: AudioEffectItem[];
+}
+
+/**
+ * Global colour grade. Every field defaults to its identity value; ranges
+ * mirror the engine (brightness -1..1, contrast/saturation 0..3, gamma 0..10,
+ * hue -360..360, temperature/tint -1..1, vibrance -2..2).
+ */
+export interface ColorConfig {
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  gamma: number;
+  hue: number;
+  temperature: number;
+  tint: number;
+  vibrance: number;
+}
+
+/** Position anchors the engine accepts for overlay x/y (numbers also allowed). */
+export type OverlayAnchor =
+  | "center"
+  | "top_left"
+  | "top_right"
+  | "bottom_left"
+  | "bottom_right"
+  | "top"
+  | "bottom"
+  | "left"
+  | "right";
+
+/** The two mask shapes the engine implements. */
+export type MaskType = "circle" | "ellipse";
+
+/**
+ * Overlay mask. Omit the whole object to skip masking (there is no "none"
+ * type). `invert` keeps the region outside the shape instead of inside.
+ */
+export interface MaskConfig {
+  type: MaskType;
+  feather: number;
+  width?: number | null;
+  height?: number | null;
+  rotation: number;
+  invert: boolean;
+}
+
+/**
+ * Image/video overlay compositing options. `asset` is a bare filename resolved
+ * by the adapter. `scale` and `width`/`height` are mutually exclusive.
+ */
+export interface OverlayConfig {
+  asset: string;
+  x: number | OverlayAnchor;
+  y: number | OverlayAnchor;
+  scale?: number | null;
+  width?: number | null;
+  height?: number | null;
+  opacity: number;
+  rotation: number;
+  layer: number;
+  color?: ColorConfig | null;
+  mask?: MaskConfig | null;
+}
+
 /** A creative profile's editable creative parameters (mirrors the backend). */
 export interface ProfileInput {
   label: string;
   description?: string;
-  /** Creative sections; a section left undefined means that step is skipped. */
-  resize?: Record<string, unknown> | null;
-  audio?: { effects: Record<string, unknown>[] } | null;
-  color?: Record<string, number> | null;
-  overlay?: Record<string, unknown> | null;
+  /** Creative sections; a section left undefined/null means that step is skipped. */
+  resize?: ResizeConfig | null;
+  audio?: AudioConfig | null;
+  color?: ColorConfig | null;
+  overlay?: OverlayConfig | null;
   /** Optional per-profile default export quality. */
   export_quality?: string | null;
+}
+
+/** A selectable overlay asset for the picker. */
+export interface AssetSummary {
+  /** Bare filename a profile stores. */
+  name: string;
+  /** True for bundled read-only assets; false for user uploads. */
+  builtin: boolean;
 }
 
 /** A stored creative profile as returned by the backend. */
@@ -226,6 +353,55 @@ export async function updateAppSettings(input: AppSettings): Promise<AppSettings
     throw new Error(`Failed to update settings: ${response.status}`);
   }
   return (await response.json()) as AppSettings;
+}
+
+/** Fetch overlay assets (built-ins first, then user uploads). Throws on non-OK. */
+export async function fetchOverlayAssets(signal?: AbortSignal): Promise<AssetSummary[]> {
+  const response = await fetch(`${API_BASE_URL}/assets?type=overlay`, {
+    signal,
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load assets: ${response.status}`);
+  }
+  return (await response.json()) as AssetSummary[];
+}
+
+/**
+ * Upload an overlay asset. Returns its summary, whose `name` is the
+ * (possibly de-duplicated) bare filename a profile should reference. Throws
+ * with the server's validation detail on a non-OK response.
+ */
+export async function uploadOverlayAsset(file: File): Promise<AssetSummary> {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch(`${API_BASE_URL}/assets/upload`, {
+    method: "POST",
+    body,
+  });
+  if (!response.ok) {
+    let detail = `Failed to upload asset: ${response.status}`;
+    try {
+      const payload = (await response.json()) as { detail?: string };
+      if (typeof payload.detail === "string") {
+        detail = payload.detail;
+      }
+    } catch {
+      // Non-JSON error body; keep the status-based message.
+    }
+    throw new Error(detail);
+  }
+  return (await response.json()) as AssetSummary;
+}
+
+/** Delete a user-uploaded overlay asset. Throws on a non-OK response. */
+export async function deleteOverlayAsset(name: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/assets/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to delete asset: ${response.status}`);
+  }
 }
 
 /** Fetch the available export-quality options. Throws on a non-OK response. */

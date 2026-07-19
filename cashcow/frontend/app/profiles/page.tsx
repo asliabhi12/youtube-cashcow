@@ -1,153 +1,311 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Copy, Trash2 } from "lucide-react";
+import { Copy, FilePlus2, Save, SaveAll, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ProfileEditor } from "@/features/profile-editor/profile-editor";
+import { useProfileEditor } from "@/features/profile-editor/use-profile-editor";
 import {
-  deleteProfile,
-  duplicateProfile,
+  fetchExportQualities,
   fetchProfiles,
+  type Option,
   type ProfileSummary,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type LoadState =
-  | { kind: "loading" }
-  | { kind: "error" }
-  | { kind: "ready"; profiles: ProfileSummary[] };
-
 /**
- * Creative-profile manager: lists built-in and custom profiles and lets the
- * user duplicate any profile or delete their custom ones. Editing individual
- * parameters happens on the Home page's form (and, in Milestone B, a dedicated
- * editor); this page is the library view.
+ * Creative-profile manager: a scrollable library list on the left and the full
+ * profile editor on the right. Selecting a profile loads it into the editor;
+ * New starts a blank draft; Save persists (creating a copy for a built-in),
+ * Save As always creates a new profile, and Delete removes the active custom
+ * profile.
+ *
+ * The page fills the viewport: the list scrolls independently while its "New"
+ * button and the editor's action bar stay fixed, so it reads like a desktop
+ * app. The editor state is shared with the Home form via
+ * {@link useProfileEditor}. Ctrl/Cmd+S saves.
  */
 export default function ProfilesPage() {
-  const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const editor = useProfileEditor();
+  const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
+  const [qualities, setQualities] = useState<Option[]>([]);
+  const [loadError, setLoadError] = useState(false);
 
-  const load = useCallback(async (signal?: AbortSignal): Promise<void> => {
-    try {
-      const profiles = await fetchProfiles(signal);
-      setState({ kind: "ready", profiles });
-    } catch {
-      if (!signal?.aborted) {
-        setState({ kind: "error" });
-      }
-    }
+  const reload = useCallback(async (signal?: AbortSignal): Promise<ProfileSummary[]> => {
+    const list = await fetchProfiles(signal);
+    setProfiles(list);
+    return list;
   }, []);
 
+  // Load the list + qualities once, and open the first profile.
   useEffect(() => {
     const controller = new AbortController();
-    void load(controller.signal);
+    void (async () => {
+      try {
+        const [list, q] = await Promise.all([
+          reload(controller.signal),
+          fetchExportQualities(controller.signal),
+        ]);
+        setQualities(q);
+        if (list[0] !== undefined) {
+          await editor.loadProfile(list[0].id);
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setLoadError(true);
+        }
+      }
+    })();
     return () => controller.abort();
-  }, [load]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  async function handleDuplicate(profile: ProfileSummary): Promise<void> {
-    const label = window.prompt("Name for the copy:", `${profile.label} (copy)`)?.trim();
-    if (!label) {
+  // Ctrl/Cmd+S saves the active profile.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (editor.dirty && !editor.saving) {
+          void handleSave();
+        }
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor.dirty, editor.saving]);
+
+  async function selectProfile(id: string): Promise<void> {
+    if (id === editor.activeId) {
       return;
     }
-    try {
-      await duplicateProfile(profile.id, label);
-      await load();
-    } catch {
-      setState({ kind: "error" });
+    if (editor.dirty && !window.confirm("Discard unsaved changes?")) {
+      return;
+    }
+    await editor.loadProfile(id);
+  }
+
+  function handleNew(): void {
+    if (editor.dirty && !window.confirm("Discard unsaved changes?")) {
+      return;
+    }
+    editor.newProfile();
+  }
+
+  async function handleSave(): Promise<void> {
+    if (editor.isBuiltin) {
+      await handleSaveAs();
+      return;
+    }
+    const id = await editor.save();
+    if (id !== null) {
+      await reload();
     }
   }
 
-  async function handleDelete(profile: ProfileSummary): Promise<void> {
-    if (!window.confirm(`Delete profile "${profile.label}"?`)) {
+  async function handleSaveAs(): Promise<void> {
+    const label = window.prompt("Name for the new profile:", editor.draft.label)?.trim();
+    if (!label) {
       return;
     }
-    try {
-      await deleteProfile(profile.id);
-      await load();
-    } catch {
-      setState({ kind: "error" });
+    const id = await editor.saveAs(label);
+    if (id !== null) {
+      await reload();
+    }
+  }
+
+  async function handleDelete(): Promise<void> {
+    if (editor.activeId === null || editor.isBuiltin) {
+      return;
+    }
+    const label = profiles.find((p) => p.id === editor.activeId)?.label ?? editor.draft.label;
+    if (!window.confirm(`Delete profile "${label}"?`)) {
+      return;
+    }
+    const ok = await editor.remove();
+    if (ok) {
+      const list = await reload();
+      if (list[0] !== undefined) {
+        await editor.loadProfile(list[0].id);
+      } else {
+        editor.newProfile();
+      }
     }
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
-      <h1 className="text-xl font-semibold tracking-tight">Profiles</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Reusable creative profiles you can apply to any video.
-      </p>
-
-      <div className="mt-8">
-        {state.kind === "loading" && (
-          <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed">
-            <p className="text-sm text-muted-foreground">Loading profiles…</p>
-          </div>
-        )}
-
-        {state.kind === "error" && (
-          <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed">
-            <p className="text-sm text-muted-foreground">
-              Could not load profiles. Is the server running?
+    <div className="flex h-full flex-col md:overflow-hidden">
+      {/* Page header (fixed) */}
+      <header className="shrink-0 border-b px-6 py-5">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Profiles</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Reusable creative profiles you can apply to any video.
             </p>
           </div>
-        )}
+          {editor.dirty && (
+            <span className="shrink-0 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-600 dark:text-amber-500">
+              ● Unsaved changes
+            </span>
+          )}
+        </div>
+      </header>
 
-        {state.kind === "ready" && (
-          <ul className="flex flex-col gap-2">
-            {state.profiles.map((profile) => (
-              <li
-                key={profile.id}
-                className="flex items-center justify-between gap-4 rounded-lg border px-4 py-3"
+      {loadError ? (
+        <div className="flex flex-1 items-center justify-center p-6">
+          <p className="text-sm text-muted-foreground">
+            Could not load profiles. Is the server running?
+          </p>
+        </div>
+      ) : (
+        <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col md:min-h-0 md:grid md:grid-cols-[minmax(15rem,30%)_minmax(0,1fr)]">
+          {/* Library list — independently scrollable */}
+          <aside className="flex flex-col md:min-h-0 md:border-r">
+            <div className="shrink-0 px-4 pt-4 md:px-5">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleNew}
+                className="w-full justify-start"
               >
-                <div className="flex min-w-0 flex-col gap-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium">{profile.label}</span>
-                    <span
-                      className={cn(
-                        "rounded-full border px-2 py-0.5 text-xs font-medium",
-                        profile.builtin
-                          ? "border-input text-muted-foreground"
-                          : "border-primary/40 text-primary",
-                      )}
-                    >
-                      {profile.builtin ? "Built-in" : "Custom"}
-                    </span>
-                  </div>
-                  {profile.description !== "" && (
-                    <span className="truncate text-xs text-muted-foreground">
-                      {profile.description}
-                    </span>
-                  )}
-                </div>
+                <FilePlus2 />
+                New Profile
+              </Button>
+            </div>
+            <ul className="flex max-h-72 flex-col gap-1.5 overflow-y-auto p-4 md:max-h-none md:flex-1 md:px-5">
+              {profiles.map((profile) => (
+                <li key={profile.id}>
+                  <ProfileCard
+                    profile={profile}
+                    active={profile.id === editor.activeId}
+                    onSelect={() => void selectProfile(profile.id)}
+                  />
+                </li>
+              ))}
+            </ul>
+          </aside>
 
-                <div className="flex shrink-0 items-center gap-2">
+          {/* Editor — fixed action bar, scrollable body */}
+          <section className="flex flex-col md:min-h-0">
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-6 py-3">
+              {editor.isBuiltin ? (
+                <Button
+                  size="sm"
+                  disabled={editor.saving}
+                  onClick={() => void handleSaveAs()}
+                >
+                  <Copy />
+                  Duplicate
+                </Button>
+              ) : (
+                <>
                   <Button
                     size="sm"
-                    variant="ghost"
-                    onClick={() => void handleDuplicate(profile)}
-                    title="Duplicate this profile"
+                    disabled={editor.saving || !editor.dirty}
+                    onClick={() => void handleSave()}
                   >
-                    <Copy />
-                    Duplicate
+                    <Save />
+                    Save
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={editor.saving}
+                    onClick={() => void handleSaveAs()}
+                  >
+                    <SaveAll />
+                    Save As
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={profile.builtin}
-                    onClick={() => void handleDelete(profile)}
-                    title={
-                      profile.builtin
-                        ? "Built-in profiles can't be deleted"
-                        : "Delete this profile"
-                    }
+                    disabled={editor.saving || editor.activeId === null}
+                    onClick={() => void handleDelete()}
+                    className="ml-auto text-red-600 hover:text-red-700 dark:text-red-500"
+                    title="Delete this profile"
                   >
                     <Trash2 />
                     Delete
                   </Button>
+                </>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              {editor.loading ? (
+                <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed">
+                  <p className="text-sm text-muted-foreground">Loading profile…</p>
                 </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+              ) : (
+                <div className="mx-auto max-w-2xl">
+                  <ProfileEditor
+                    editor={editor}
+                    qualities={qualities}
+                    disabled={editor.saving}
+                  />
+                  {editor.error !== null && (
+                    <p className="mt-4 text-sm text-red-500">{editor.error}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * A single profile in the library list. Fixed layout so long descriptions never
+ * escape the card: the name row keeps the badge pinned top-right, and the
+ * description is clamped to two lines. The selected state is a filled accent
+ * with a left rail so the active profile is unmistakable.
+ */
+function ProfileCard({
+  profile,
+  active,
+  onSelect,
+}: {
+  profile: ProfileSummary;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={active}
+      className={cn(
+        "flex w-full flex-col gap-1.5 rounded-lg border px-3 py-2.5 text-left transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        active
+          ? "border-primary bg-accent shadow-sm ring-1 ring-primary/20"
+          : "border-input hover:border-input hover:bg-accent/40",
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight">
+          {profile.label}
+        </span>
+        <span
+          className={cn(
+            "shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium leading-none",
+            profile.builtin
+              ? "border-input text-muted-foreground"
+              : "border-primary/40 text-primary",
+          )}
+        >
+          {profile.builtin ? "Built-in" : "Custom"}
+        </span>
+      </div>
+      {profile.description !== "" && (
+        <span className="line-clamp-2 text-xs leading-snug text-muted-foreground">
+          {profile.description}
+        </span>
+      )}
+    </button>
   );
 }

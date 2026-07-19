@@ -1,23 +1,43 @@
 "use client";
 
-import { AdvancedOptions } from "@/components/advanced-options";
+import { useEffect } from "react";
+
 import { ExportQualitySelector } from "@/components/export-quality-selector";
 import { ProfileActions } from "@/components/profile-actions";
 import { ProfileSelector } from "@/components/profile-selector";
 import { TrimRangeSlider, formatDuration } from "@/components/trim-range-slider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ProfileEditor } from "@/features/profile-editor/profile-editor";
 
 import { useWorkflowForm } from "./use-workflow-form";
 
 /**
- * The Home page's workflow configuration form: a URL, a trim range, an editing
- * preset, and an export quality. This composes small presentational components
- * and delegates all state and side effects to {@link useWorkflowForm}, so the
- * form itself stays declarative.
+ * The Home page's workflow configuration form: a URL, a trim range, and a fully
+ * editable creative profile (selector + actions + category editors), plus a
+ * per-job export quality. All state and side effects live in
+ * {@link useWorkflowForm}; this component stays declarative.
+ *
+ * Ctrl/Cmd+S saves the active profile from anywhere in the form.
  */
 export function WorkflowForm() {
   const form = useWorkflowForm();
+  const { editor } = form;
+
+  // Ctrl/Cmd+S saves the active profile without submitting the browser's own
+  // save dialog.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (editor.dirty && !editor.saving) {
+          void form.saveProfile();
+        }
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [editor.dirty, editor.saving, form]);
 
   return (
     <div className="flex w-full flex-col gap-8">
@@ -38,9 +58,7 @@ export function WorkflowForm() {
           <p className="text-xs text-muted-foreground">Fetching video details…</p>
         )}
         {form.videoTitle !== null && !form.loadingMetadata && (
-          <p className="truncate text-xs text-muted-foreground">
-            {form.videoTitle}
-          </p>
+          <p className="truncate text-xs text-muted-foreground">{form.videoTitle}</p>
         )}
       </div>
 
@@ -61,26 +79,46 @@ export function WorkflowForm() {
         />
       </div>
 
-      {/* Creative profile */}
+      {/* Creative profile: selector, actions, and the full editor */}
       <div className="flex flex-col gap-3">
-        <ProfileSelector
-          options={form.profiles}
-          value={form.profileId}
-          onChange={form.setProfileId}
+        <div className="flex items-center justify-between gap-2">
+          <ProfileSelector
+            options={form.profiles}
+            value={editor.activeId ?? ""}
+            onChange={(id) => void form.selectProfile(id)}
+            disabled={form.submitting || editor.saving}
+            className="flex-1"
+          />
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <ProfileActions
+            isBuiltin={editor.isBuiltin}
+            canDelete={!editor.isBuiltin && editor.activeId !== null}
+            disabled={form.submitting || editor.saving}
+            onNew={() => form.newProfile()}
+            onSave={() => void form.saveProfile()}
+            onSaveAs={() => void form.saveProfileAs()}
+            onDelete={() => void form.removeProfile()}
+          />
+          {editor.dirty && (
+            <span className="text-xs text-amber-600 dark:text-amber-500">
+              ● Unsaved changes
+            </span>
+          )}
+        </div>
+
+        <ProfileEditor
+          editor={editor}
+          qualities={form.qualities}
           disabled={form.submitting}
         />
-        <ProfileActions
-          isBuiltin={form.isBuiltinProfile}
-          canDelete={!form.isBuiltinProfile && form.profileId !== ""}
-          disabled={form.submitting}
-          onNew={() => void form.newProfile()}
-          onSave={() => void form.saveProfile()}
-          onSaveAs={() => void form.saveProfileAs()}
-          onDelete={() => void form.removeProfile()}
-        />
+
+        {editor.error !== null && (
+          <p className="text-sm text-red-500">{editor.error}</p>
+        )}
       </div>
 
-      {/* Export quality */}
+      {/* Per-job export quality (starts from the profile's default, overridable) */}
       <ExportQualitySelector
         options={form.qualities}
         value={form.exportQuality}
@@ -88,17 +126,10 @@ export function WorkflowForm() {
         disabled={form.submitting}
       />
 
-      {/* Advanced (placeholder) */}
-      <AdvancedOptions />
-
       {form.error !== null && <p className="text-sm text-red-500">{form.error}</p>}
 
       <div className="flex justify-end">
-        <Button
-          size="lg"
-          disabled={!form.canRun}
-          onClick={() => void form.submit()}
-        >
+        <Button size="lg" disabled={!form.canRun} onClick={() => void form.submit()}>
           {form.submitting ? "Running…" : "Run Workflow"}
         </Button>
       </div>
