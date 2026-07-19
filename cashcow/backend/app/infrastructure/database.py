@@ -1,14 +1,24 @@
+import logging
 import sqlite3
 import threading
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent.parent.parent.parent / "cashcow.db"
 
+logger = logging.getLogger(__name__)
+
 _init_lock = threading.Lock()
 _init_done = False
 
 
 def _get_connection() -> sqlite3.Connection:
+    resolved = str(DB_PATH.resolve())
+    logger.info(
+        "[_get_connection] connecting to %s (file_exists=%s, init_done=%s)",
+        resolved,
+        DB_PATH.exists(),
+        _init_done,
+    )
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -18,11 +28,19 @@ def _get_connection() -> sqlite3.Connection:
 
 def init_database() -> None:
     global _init_done
+    resolved = str(DB_PATH.resolve())
     if _init_done:
+        logger.info("[init_database] skipped (already initialised, db=%s)", resolved)
         return
     with _init_lock:
         if _init_done:
+            logger.info("[init_database] skipped (already initialised, db=%s)", resolved)
             return
+        logger.info(
+            "[init_database] creating schema at %s (file_exists=%s)",
+            resolved,
+            DB_PATH.exists(),
+        )
         conn = _get_connection()
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS jobs (
@@ -72,10 +90,13 @@ def init_database() -> None:
         conn.commit()
         conn.close()
         _init_done = True
+        logger.info("[init_database] schema created at %s", resolved)
 
 
 def reset_database_for_testing() -> None:
     global _init_done
+    resolved = str(DB_PATH.resolve())
+    logger.info("[reset_database_for_testing] resetting db at %s", resolved)
     conn = _get_connection()
     conn.executescript("""
         DROP TABLE IF EXISTS agent_memory;
@@ -88,3 +109,4 @@ def reset_database_for_testing() -> None:
     _init_done = False
     if DB_PATH.exists():
         DB_PATH.unlink()
+        logger.info("[reset_database_for_testing] deleted %s", resolved)

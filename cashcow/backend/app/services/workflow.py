@@ -267,9 +267,13 @@ def _raise_if_cancelled(job_id: str, cancel_event: threading.Event) -> None:
 
 
 # Initialise the SQLite database once on module load (idempotent).
+logger.info("=== workflow.py module-level init ===")
+from app.infrastructure.database import DB_PATH  # noqa: E402
+logger.info("DB_PATH used by this process: %s (exists=%s)", DB_PATH, DB_PATH.exists())
 init_database()
 _memory_repo = MemoryRepository()
 _workflow_event_repo = WorkflowEventRepository()
+logger.info("=== workflow.py module-level init done ===")
 
 
 def _execute(

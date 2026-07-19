@@ -136,3 +136,9 @@ benchmark/**/*.ts
 .cache/
 
 cashcow.db
+
+# SQLite
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
