@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from app.models.job import Job, JobCreate, JobLogEntry
 from app.services.job_logs import CLOSE, job_log_hub
 from app.services.jobs import job_store
+from app.services.presets import is_preset, is_quality
 from app.services.workflow import start_workflow
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -36,11 +37,33 @@ def _sse(data: str, *, event: str | None = None) -> str:
 def create_job(payload: JobCreate) -> Job:
     """Create a pending job and start its workflow in the background.
 
-    Returns immediately with the created job; processing runs asynchronously
-    and updates the job's status as the workflow progresses.
+    Validates the creative profile (preset and export quality must be known
+    slugs), then returns immediately with the created job; processing runs
+    asynchronously and updates the job's status as the workflow progresses.
     """
-    job = job_store.create(payload.url)
-    start_workflow(job.id, job.url)
+    if not is_preset(payload.preset):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown preset: '{payload.preset}'",
+        )
+    if not is_quality(payload.export_quality):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown export quality: '{payload.export_quality}'",
+        )
+
+    job = job_store.create(
+        payload.url,
+        preset=payload.preset,
+        export_quality=payload.export_quality,
+    )
+    start_workflow(
+        job.id,
+        job.url,
+        trim=payload.trim,
+        preset=payload.preset,
+        export_quality=payload.export_quality,
+    )
     return job
 
 
@@ -145,4 +168,6 @@ def download_job_output(job_id: str) -> FileResponse:
             detail="Output file no longer exists",
         )
 
-    return FileResponse(path, filename=path.name, media_type="application/octet-stream")
+    # Serve under the title-derived name when known, else the on-disk name.
+    filename = job.output_name or path.name
+    return FileResponse(path, filename=filename, media_type="application/octet-stream")

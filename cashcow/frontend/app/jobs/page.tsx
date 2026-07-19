@@ -87,9 +87,14 @@ export default function JobsPage() {
     }
   }, [state, openJob]);
 
-  async function handleRerun(url: string): Promise<void> {
+  async function handleRerun(job: Job): Promise<void> {
     try {
-      await createJob(url);
+      // Re-run preserves the original job's creative profile.
+      await createJob({
+        url: job.url,
+        preset: job.preset,
+        export_quality: job.export_quality,
+      });
       await load();
     } catch {
       setState({ kind: "error" });
@@ -151,7 +156,7 @@ export default function JobsPage() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => void handleRerun(job.url)}
+                    onClick={() => void handleRerun(job)}
                     title="Re-run this URL"
                   >
                     <RotateCw />

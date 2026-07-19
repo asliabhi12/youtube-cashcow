@@ -23,13 +23,21 @@ class JobStore:
         self._jobs: dict[str, Job] = {}
         self._lock = Lock()
 
-    def create(self, url: str) -> Job:
-        """Create a pending job for the given URL and store it."""
+    def create(
+        self,
+        url: str,
+        *,
+        preset: str = "custom",
+        export_quality: str = "balanced",
+    ) -> Job:
+        """Create a pending job for the given URL and creative profile."""
         job = Job(
             id=str(uuid4()),
             url=url,
             status="pending",
             created_at=datetime.now(timezone.utc),
+            preset=preset,
+            export_quality=export_quality,
         )
         with self._lock:
             self._jobs[job.id] = job
@@ -77,6 +85,18 @@ class JobStore:
                 job.output_file = output_file
             if error is not None:
                 job.error = error
+
+    def set_output_name(self, job_id: str, output_name: str) -> None:
+        """Set a job's title-derived download filename.
+
+        Called mid-run once the video title is known (after download), not tied
+        to a status transition. Missing jobs are ignored.
+        """
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return
+            job.output_name = output_name
 
 
 # Process-wide store shared by all requests.

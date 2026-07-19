@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # Job lifecycle states, mirroring the workflow's progress: a job is "pending"
 # until its workflow starts, "running" while the engine executes, then either
@@ -27,10 +27,41 @@ class JobLogEntry(BaseModel):
     message: str
 
 
+class TrimRange(BaseModel):
+    """A start/end clip range in seconds.
+
+    Both bounds are stored as seconds (the UI's dual-handle slider works in
+    seconds internally). ``end`` must be strictly greater than ``start`` so the
+    range always describes a non-empty clip.
+    """
+
+    start: float = Field(ge=0, description="Clip start offset in seconds.")
+    end: float = Field(gt=0, description="Clip end offset in seconds.")
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> "TrimRange":
+        if self.end <= self.start:
+            raise ValueError("trim end must be greater than start")
+        return self
+
+
 class JobCreate(BaseModel):
-    """Request body for POST /jobs."""
+    """Request body for POST /jobs.
+
+    Beyond the URL, the body carries a *creative profile* — a trim range, an
+    editing preset, and an export quality — that the workflow adapter injects
+    into the fixed processing pipeline. None of these configure the pipeline's
+    steps or order; they only supply parameters the existing steps accept.
+    """
 
     url: str = Field(min_length=1, description="YouTube URL to process.")
+    trim: TrimRange | None = Field(
+        default=None, description="Optional clip range; the whole video is used when omitted."
+    )
+    preset: str = Field(default="custom", description="Editing preset slug (see GET /presets).")
+    export_quality: str = Field(
+        default="balanced", description="Export quality slug (see GET /export-qualities)."
+    )
 
 
 class Job(BaseModel):
@@ -40,8 +71,15 @@ class Job(BaseModel):
     url: str
     status: JobStatus
     created_at: datetime
+    # The creative profile this job was created with, echoed back for display.
+    preset: str = "custom"
+    export_quality: str = "balanced"
     # Populated from the workflow result once it finishes: the produced file on
     # success, or the failure detail on error. Both stay None while pending or
     # running.
     output_file: str | None = None
+    # Human-friendly download filename derived from the video title during
+    # processing (sanitized, ``.mp4`` appended). None until the title is known;
+    # the on-disk file is always ``{id}.mp4`` regardless.
+    output_name: str | None = None
     error: str | None = None
