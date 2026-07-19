@@ -22,6 +22,7 @@ from app.api import jobs as jobs_api
 from app.services import metadata as metadata_module
 from app.services.ai import gemini_provider
 from app.services.ai.gemini_provider import GeminiMetadataProvider
+from app.services.ai.metadata_provider import GeminiInvalidJSONError, GeminiRateLimitError
 from app.services.ai.mock_provider import MockMetadataProvider
 from app.services.ai import provider_factory
 from app.services.ai.provider_factory import get_metadata_provider
@@ -391,6 +392,38 @@ def test_gemini_logs_missing_candidate_or_text_reason(monkeypatch, caplog, job, 
     assert expected_log in caplog.text
 
 
+def test_gemini_max_tokens_truncation_leaves_metadata_unavailable(monkeypatch, caplog, job):
+    """MAX_TOKENS finish reason should be caught as MAX_TOKENS truncation."""
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", provider_factory.get_metadata_provider)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    truncated_json = '{"title": "Partial", "description": "Truncated'
+    truncated_payload = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [{"text": truncated_json}],
+                },
+                "finishReason": "MAX_TOKENS",
+            }
+        ],
+    }
+
+    monkeypatch.setattr(
+        gemini_provider,
+        "urlopen",
+        lambda request, timeout: StubResponse(truncated_payload),
+    )
+
+    with caplog.at_level("INFO"):
+        metadata = metadata_service.generate(job.id)
+
+    assert metadata is None
+    assert job_store.get(job.id).metadata_status == "unavailable"
+    assert "MAX_TOKENS" in caplog.text
+    assert "truncated" in caplog.text
+
+
 def test_gemini_missing_api_key_leaves_metadata_unavailable(monkeypatch, caplog, job):
     monkeypatch.setattr(metadata_module, "get_metadata_provider", provider_factory.get_metadata_provider)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
@@ -442,7 +475,7 @@ def test_metadata_response_validation_leaves_metadata_unavailable(monkeypatch, c
     assert metadata is None
     assert job_store.get(job.id).has_metadata is False
     assert job_store.get(job.id).metadata_status == "unavailable"
-    assert "Metadata validation failed" in caplog.text
+    assert "Schema validation failure" in caplog.text
 
 
 def test_startup_logs_provider_with_api_key(monkeypatch, caplog):
@@ -514,7 +547,7 @@ def test_workflow_metadata_failure_does_not_fail_completed_job(monkeypatch):
     monkeypatch.setattr(workflow_module, "PipelineRunner", FakeRunner)
     monkeypatch.setattr(workflow_module, "default_registry", lambda: object())
     monkeypatch.setattr(workflow_module, "HardenedDownloader", lambda settings: object())
-    monkeypatch.setattr(workflow_module.metadata_service, "generate", lambda job_id: None)
+    monkeypatch.setattr(workflow_module.metadata_service, "generate", lambda job_id, *args, **kwargs: None)
     monkeypatch.setattr(
         workflow_module.youtube_upload_service,
         "upload_job",
@@ -528,9 +561,9 @@ def test_workflow_metadata_failure_does_not_fail_completed_job(monkeypatch):
         latest = job_store.get(job.id)
         assert latest is not None
         assert latest.status == "completed"
-        assert latest.has_metadata is False
-        assert latest.metadata_status == "unavailable"
-        assert metadata_service.get(job.id) is None
+        assert latest.has_metadata is True
+        assert latest.metadata_status == "available"
+        assert metadata_service.get(job.id) is not None
     finally:
         metadata_service.delete(job.id)
         job_store.delete(job.id)
@@ -565,3 +598,396 @@ def test_metadata_retrieval_after_automatic_generation(monkeypatch):
     finally:
         metadata_service.delete(job.id)
         job_store.delete(job.id)
+
+
+# ── Language handling ──────────────────────────────────────────────────────────
+
+
+def test_system_prompt_has_language_instructions():
+    """The system prompt must include English/Hindi/Hinglish handling rules."""
+    prompt = metadata_module.SYSTEM_PROMPT
+    assert "Hindi" in prompt
+    assert "Hinglish" in prompt
+    assert "English" in prompt
+    assert "Do NOT translate to English" in prompt
+
+
+def test_english_title_seed_generates_metadata(monkeypatch):
+    captured = {}
+
+    class CaptureProvider:
+        name = "capture"
+        model = "capture-v1"
+
+        def generate(self, context):
+            captured["context"] = context
+            return {
+                "title": "Top 10 Mumbai Street Food Spots",
+                "description": "Exploring the best street food in Mumbai.",
+                "tags": ["mumbai", "street food", "india"],
+            }
+
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", lambda: CaptureProvider())
+    job = job_store.create("https://youtube.example/watch?v=eng")
+    job_store.set_output_name(job.id, "Mumbai_Street_Food.mp4")
+    try:
+        metadata = metadata_service.generate(job.id, MetadataCreate(title_seed="Best Street Food in Mumbai"))
+    finally:
+        metadata_service.delete(job.id)
+        job_store.delete(job.id)
+
+    assert metadata is not None
+    assert metadata.title == "Top 10 Mumbai Street Food Spots"
+    ctx = captured["context"]
+    assert ctx.title_seed == "Best Street Food in Mumbai"
+    assert "English" in ctx.system_prompt
+    assert "Hinglish" in ctx.system_prompt
+    assert "Hindi" in ctx.system_prompt
+
+
+def test_hindi_title_seed_preserves_language(monkeypatch):
+    captured = {}
+
+    class CaptureProvider:
+        name = "capture"
+        model = "capture-v1"
+
+        def generate(self, context):
+            captured["context"] = context
+            return {
+                "title": "मुंबई की गलियों का स्वाद",
+                "description": "मुंबई के स्ट्रीट फूड की एक रोमांचक यात्रा।",
+                "tags": ["मुंबई", "स्ट्रीट फूड"],
+            }
+
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", lambda: CaptureProvider())
+    job = job_store.create("https://youtube.example/watch?v=hindi")
+    job_store.set_output_name(job.id, "Mumbai_Food.mp4")
+    try:
+        metadata = metadata_service.generate(job.id, MetadataCreate(title_seed="मुंबई की गलियों का स्वाद"))
+    finally:
+        metadata_service.delete(job.id)
+        job_store.delete(job.id)
+
+    assert metadata is not None
+    assert "मुंबई" in metadata.title
+    assert "स्वाद" in metadata.title
+    ctx = captured["context"]
+    assert ctx.title_seed == "मुंबई की गलियों का स्वाद"
+
+
+def test_hinglish_title_seed_preserves_mixed_language(monkeypatch):
+    captured = {}
+
+    class CaptureProvider:
+        name = "capture"
+        model = "capture-v1"
+
+        def generate(self, context):
+            captured["context"] = context
+            return {
+                "title": "Mumbai ki Galiyon ka Swaad - Street Food Tour",
+                "description": "Exploring Mumbai ke best street food spots!",
+                "tags": ["mumbai", "street food", "hinglish"],
+            }
+
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", lambda: CaptureProvider())
+    job = job_store.create("https://youtube.example/watch?v=hinglish")
+    job_store.set_output_name(job.id, "Mumbai_Food.mp4")
+    try:
+        metadata = metadata_service.generate(job.id, MetadataCreate(title_seed="Mumbai ki galiyon ka swaad - street food tour"))
+    finally:
+        metadata_service.delete(job.id)
+        job_store.delete(job.id)
+
+    assert metadata is not None
+    assert "Mumbai" in metadata.title
+    assert "galiyon" in metadata.title or "Galiyon" in metadata.title
+    assert "Street Food" in metadata.title or "street food" in metadata.title
+    ctx = captured["context"]
+    assert ctx.title_seed == "Mumbai ki galiyon ka swaad - street food tour"
+
+
+def test_unicode_tags_are_preserved(monkeypatch):
+    class UnicodeProvider:
+        name = "unicode"
+        model = "unicode-v1"
+
+        def generate(self, context):
+            return {
+                "title": "Unicode Test 🎬",
+                "description": "Testing emoji and non-Latin characters: こんにちは",
+                "tags": ["emoji 🎉", "日本語", "हिन्दी", "unicode"],
+            }
+
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", lambda: UnicodeProvider())
+    job = job_store.create("https://youtube.example/watch?v=unicode")
+    try:
+        metadata = metadata_service.generate(job.id, MetadataCreate(title_seed="Unicode Test"))
+    finally:
+        metadata_service.delete(job.id)
+        job_store.delete(job.id)
+
+    assert metadata is not None
+    assert "🎬" in metadata.title
+    assert "こんにちは" in metadata.description
+    assert "日本語" in metadata.tags
+    assert "हिन्दी" in metadata.tags
+
+
+# ── Retry logic ────────────────────────────────────────────────────────────────
+
+
+def test_retry_succeeds_after_transient_failure(monkeypatch, job):
+    call_count = 0
+
+    class RetryThenSuccessProvider:
+        name = "retry"
+        model = "retry-v1"
+
+        def generate(self, context):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise GeminiRateLimitError("Rate limited: too many requests")
+            return {
+                "title": "Retry Success Title",
+                "description": "Generated on second attempt",
+                "tags": ["retry", "success"],
+            }
+
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", lambda: RetryThenSuccessProvider())
+    metadata = metadata_service.generate(job.id, MetadataCreate(title_seed="Retry Test"))
+
+    assert metadata is not None
+    assert metadata.title == "Retry Success Title"
+    assert call_count == 2
+
+
+def test_retry_exhaustion_triggers_fallback(monkeypatch, caplog, job):
+    call_count = 0
+
+    class AlwaysFailsProvider:
+        name = "failing"
+        model = "failing-v1"
+
+        def generate(self, context):
+            nonlocal call_count
+            call_count += 1
+            raise GeminiInvalidJSONError("Invalid JSON: always fails")
+
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", lambda: AlwaysFailsProvider())
+
+    with caplog.at_level("INFO"):
+        metadata = metadata_service.generate(job.id, fallback=True)
+
+    assert metadata is not None
+    assert metadata.provider == "fallback"
+    assert call_count == 3
+    assert "FALLBACK_METADATA" in caplog.text
+    assert "METADATA_FAILED" in caplog.text
+
+
+def test_retry_exhaustion_returns_none_without_fallback(monkeypatch, job):
+    class AlwaysFailsProvider:
+        name = "failing"
+        model = "failing-v1"
+
+        def generate(self, context):
+            raise GeminiInvalidJSONError("Invalid JSON: always fails")
+
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", lambda: AlwaysFailsProvider())
+
+    metadata = metadata_service.generate(job.id, fallback=False)
+
+    assert metadata is None
+    assert job_store.get(job.id).metadata_status == "unavailable"
+
+
+# ── Timeout handling ───────────────────────────────────────────────────────────
+
+
+def test_timeout_error_is_caught_and_logged(monkeypatch, caplog, job):
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", provider_factory.get_metadata_provider)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    def fake_timeout(request, timeout):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(gemini_provider, "urlopen", fake_timeout)
+
+    with caplog.at_level("INFO"):
+        metadata = metadata_service.generate(job.id)
+
+    assert metadata is None
+    assert job_store.get(job.id).metadata_status == "unavailable"
+    assert "Timeout" in caplog.text
+
+
+# ── Token usage logging ────────────────────────────────────────────────────────
+
+
+def test_token_usage_is_logged(monkeypatch, caplog, job):
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", provider_factory.get_metadata_provider)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    def fake_urlopen(request, timeout):
+        response_body = json.dumps({
+            "candidates": [{"content": {"parts": [{"text": json.dumps({"title": "T", "description": "D", "tags": ["t"]})}]}}],
+            "usageMetadata": {
+                "promptTokenCount": 42,
+                "candidatesTokenCount": 17,
+                "thoughtsTokenCount": 10,
+                "totalTokenCount": 69,
+            },
+        })
+        return StubResponse(json.loads(response_body))
+
+    monkeypatch.setattr(gemini_provider, "urlopen", fake_urlopen)
+
+    with caplog.at_level("INFO"):
+        metadata = metadata_service.generate(job.id, MetadataCreate(title_seed="Token Test"))
+
+    assert metadata is not None
+    assert "Token usage:" in caplog.text
+    assert "prompt=42" in caplog.text
+    assert "output=17" in caplog.text
+
+
+# ── Workflow transitions ───────────────────────────────────────────────────────
+
+
+def test_workflow_transitions_metadata_ready(monkeypatch, caplog, job):
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", provider_factory.get_metadata_provider)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    def fake_urlopen(request, timeout):
+        return StubResponse({
+            "candidates": [{"content": {"parts": [{"text": json.dumps({"title": "Ready Title", "description": "Ready desc", "tags": ["ready"]})}]}}]
+        })
+
+    monkeypatch.setattr(gemini_provider, "urlopen", fake_urlopen)
+
+    with caplog.at_level("INFO"):
+        metadata = metadata_service.generate(job.id, MetadataCreate(title_seed="Ready"))
+
+    assert metadata is not None
+    assert "METADATA_READY" in caplog.text
+    assert "GENERATING_METADATA" in caplog.text
+    assert "Database write result: Successfully stored metadata" in caplog.text
+
+
+def test_workflow_transitions_metadata_failed_and_fallback(monkeypatch, caplog, job):
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", provider_factory.get_metadata_provider)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    def fake_urlopen(request, timeout):
+        raise HTTPError(
+            url=gemini_provider.GEMINI_API_BASE_URL,
+            code=429,
+            msg="Too Many Requests",
+            hdrs=None,
+            fp=BytesIO(b"rate limited"),
+        )
+
+    monkeypatch.setattr(gemini_provider, "urlopen", fake_urlopen)
+
+    with caplog.at_level("INFO"):
+        metadata = metadata_service.generate(job.id, fallback=True)
+
+    assert metadata is not None
+    assert metadata.provider == "fallback"
+    assert "METADATA_FAILED" in caplog.text
+    assert "FALLBACK_METADATA" in caplog.text
+    assert job_store.get(job.id).metadata_status == "available"
+
+
+def test_retry_workflow_transition(monkeypatch, caplog, job):
+    call_count = 0
+
+    class RetryProvider:
+        name = "retry"
+        model = "retry-v1"
+
+        def generate(self, context):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise GeminiInvalidJSONError("Invalid JSON")
+            return {"title": "Retry OK", "description": "Retry desc", "tags": ["retry"]}
+
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", lambda: RetryProvider())
+
+    with caplog.at_level("INFO"):
+        metadata = metadata_service.generate(job.id, MetadataCreate(title_seed="Retry"))
+
+    assert metadata is not None
+    assert "RETRYING_METADATA" in caplog.text
+    assert "METADATA_READY" in caplog.text
+
+
+# ── Fallback edge cases ────────────────────────────────────────────────────────
+
+
+def test_fallback_uses_title_seed_when_available(monkeypatch, job):
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", provider_factory.get_metadata_provider)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(gemini_provider, "urlopen", lambda req, timeout: (_ for _ in ()).throw(
+        HTTPError(url="", code=500, msg="Error", hdrs=None, fp=BytesIO(b""))
+    ))
+
+    metadata = metadata_service.generate(job.id, MetadataCreate(title_seed="Fallback Test Title"), fallback=True)
+    assert metadata is not None
+    assert metadata.provider == "fallback"
+    assert metadata.title == "Fallback Test Title"
+    assert metadata.description == ""
+    assert metadata.tags == []
+
+
+def test_fallback_uses_original_title_when_no_seed(monkeypatch, job):
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", provider_factory.get_metadata_provider)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(gemini_provider, "urlopen", lambda req, timeout: (_ for _ in ()).throw(
+        HTTPError(url="", code=500, msg="Error", hdrs=None, fp=BytesIO(b""))
+    ))
+    job_store.set_output_name(job.id, "Original_Video_Title.mp4")
+
+    metadata = metadata_service.generate(job.id, fallback=True)
+    assert metadata is not None
+    assert metadata.provider == "fallback"
+    assert metadata.title == "Original Video Title"
+
+
+def test_fallback_uses_output_name_when_no_seed_or_title(monkeypatch, job):
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", provider_factory.get_metadata_provider)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(gemini_provider, "urlopen", lambda req, timeout: (_ for _ in ()).throw(
+        HTTPError(url="", code=500, msg="Error", hdrs=None, fp=BytesIO(b""))
+    ))
+    job_store.set_output_name(job.id, "Some_Video_Name.mp4")
+
+    metadata = metadata_service.generate(job.id, fallback=True)
+    assert metadata is not None
+    assert metadata.provider == "fallback"
+    assert "Some Video Name" in metadata.title
+
+
+# ── Provider request logging ───────────────────────────────────────────────────
+
+
+def test_job_id_is_included_in_provider_logs(monkeypatch, caplog, job):
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", provider_factory.get_metadata_provider)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    def fake_urlopen(request, timeout):
+        return StubResponse({
+            "candidates": [{"content": {"parts": [{"text": json.dumps({"title": "T", "description": "D", "tags": ["t"]})}]}}]
+        })
+
+    monkeypatch.setattr(gemini_provider, "urlopen", fake_urlopen)
+
+    with caplog.at_level("INFO"):
+        metadata = metadata_service.generate(job.id, MetadataCreate(title_seed="Log Test"))
+
+    assert metadata is not None
+    assert f"[Job {job.id}]" in caplog.text

@@ -70,7 +70,7 @@ def test_cancel_during_metadata_marks_job_cancelled(monkeypatch):
     def run(runner):
         return SimpleNamespace(output_file=Path("/tmp/processed.mp4"))
 
-    def generate(job_id, log):
+    def generate(job_id, log, *args, **kwargs):
         job_store.request_cancel(job_id)
         job_store.set_metadata_status(job_id, "available")
 

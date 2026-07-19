@@ -328,12 +328,31 @@ def _execute(
             metadata_service.generate(
                 job_id,
                 log=lambda level, message: job_log_hub.append(job_id, level, message),
+                fallback=True,
             )
         except Exception as exc:  # noqa: BLE001 - metadata must never fail the job
-            logger.warning("Automatic metadata generation failed for job %s: %s", job_id, exc)
-            job_store.set_metadata_status(job_id, "unavailable")
-            job_log_hub.append(job_id, "WARNING", "Metadata generation unavailable.")
+            logger.error("Workflow error: Metadata generation failed for job %s: %s", job_id, exc)
+            job_log_hub.append(job_id, "ERROR", f"Workflow error: {exc}")
+
+        if metadata_service.get(job_id) is None:
+            job_log_hub.append(job_id, "INFO", "Workflow transition: FALLBACK_METADATA")
+            try:
+                context = metadata_service._build_generation_context(job_id, None)
+                fallback_metadata = metadata_service._generate_fallback_metadata(
+                    job_id, context, lambda lvl, msg: job_log_hub.append(job_id, lvl, msg)
+                )
+                with metadata_service._lock:
+                    metadata_service._metadata[job_id] = fallback_metadata
+                job_store.set_metadata_status(job_id, "available")
+                job_log_hub.append(job_id, "INFO", "Fallback metadata generated and saved successfully.")
+            except Exception as fallback_exc:
+                logger.error("Double failure: Could not generate fallback metadata: %s", fallback_exc)
+                job_log_hub.append(job_id, "ERROR", f"Workflow error: Could not generate fallback metadata: {fallback_exc}")
         _raise_if_cancelled(job_id, cancel_event)
+        
+        # State transition to UPLOADING
+        job_store.set_progress(job_id, 96, "UPLOADING")
+        job_log_hub.append(job_id, "INFO", "Workflow transition: UPLOADING")
         try:
             youtube_upload_service.upload_job(
                 job_id,
