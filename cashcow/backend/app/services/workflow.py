@@ -13,6 +13,7 @@ import re
 import sys
 import threading
 from collections.abc import Callable
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 
@@ -34,6 +35,11 @@ from src.pipeline import (  # noqa: E402
 from src.pipeline.context import PipelineContext  # noqa: E402
 from src.pipeline.models import StepRecord  # noqa: E402
 
+from app.infrastructure.database import init_database  # noqa: E402
+from app.infrastructure.repositories import (  # noqa: E402
+    MemoryRepository,
+    WorkflowEventRepository,
+)
 from app.models.job import JobProgress, TrimRange  # noqa: E402
 from app.services import assets, job_progress  # noqa: E402
 from app.services.hardened_downloader import HardenedDownloader  # noqa: E402
@@ -260,6 +266,12 @@ def _raise_if_cancelled(job_id: str, cancel_event: threading.Event) -> None:
         raise WorkflowCancelledError("Job cancellation requested")
 
 
+# Initialise the SQLite database once on module load (idempotent).
+init_database()
+_memory_repo = MemoryRepository()
+_workflow_event_repo = WorkflowEventRepository()
+
+
 def _execute(
     job_id: str,
     workflow: WorkflowDefinition,
@@ -345,20 +357,53 @@ def _execute(
         output_file = str(result.output_file) if result.output_file else None
         job_store.set_status(job_id, "running", output_file=output_file)
         _raise_if_cancelled(job_id, cancel_event)
+        _memory_repo.save(job_id, "download_video", "completed", artifact_path=output_file)
+        transcript = str(_video_context["transcript"]) if _video_context["transcript"] else None
+        _memory_repo.save(
+            job_id, "extract_transcript",
+            "completed" if transcript else "skipped",
+            output_summary=transcript[:500] if transcript else None,
+        )
+        _workflow_event_repo.append(
+            job_id, "pipeline", "completed",
+            finished_at=datetime.now(timezone.utc).isoformat(),
+        )
+        _raise_if_cancelled(job_id, cancel_event)
         metadata_service.store_video_context(
             job_id,
             transcript=str(_video_context["transcript"]) if _video_context["transcript"] else None,
             video_duration=float(_video_context["duration"]) if _video_context["duration"] is not None else None,
         )
-        try:
-            metadata_service.generate(
-                job_id,
-                log=lambda level, message: job_log_hub.append(job_id, level, message),
-                fallback=True,
-            )
-        except Exception as exc:  # noqa: BLE001 - metadata must never fail the job
-            logger.error("Workflow error: Metadata generation failed for job %s: %s", job_id, exc)
-            job_log_hub.append(job_id, "ERROR", f"Workflow error: {exc}")
+        if _memory_repo.is_completed(job_id, "generate_metadata"):
+            job_log_hub.append(job_id, "INFO", "Reused previous metadata from agent memory.")
+            logger.info("[Job %s] AgentMemory reuse: generate_metadata already completed", job_id)
+            _workflow_event_repo.append(job_id, "generate_metadata", "reused")
+        else:
+            try:
+                metadata_service.generate(
+                    job_id,
+                    log=lambda level, message: job_log_hub.append(job_id, level, message),
+                    fallback=True,
+                )
+            except Exception as exc:  # noqa: BLE001 - metadata must never fail the job
+                logger.error("Workflow error: Metadata generation failed for job %s: %s", job_id, exc)
+                job_log_hub.append(job_id, "ERROR", f"Workflow error: {exc}")
+
+            meta = metadata_service.get(job_id)
+            if meta is not None:
+                _memory_repo.save(
+                    job_id, "generate_metadata", "completed",
+                    output_summary=f"title={meta.title}",
+                    model=meta.model or "fallback",
+                    artifact_path="metadata",
+                )
+                _workflow_event_repo.append(
+                    job_id, "generate_metadata", "completed",
+                    finished_at=datetime.now(timezone.utc).isoformat(),
+                )
+            else:
+                _memory_repo.save(job_id, "generate_metadata", "failed")
+                _workflow_event_repo.append(job_id, "generate_metadata", "failed")
 
         if metadata_service.get(job_id) is None:
             job_log_hub.append(job_id, "INFO", "Workflow transition: FALLBACK_METADATA")
@@ -375,28 +420,44 @@ def _execute(
                 logger.error("Double failure: Could not generate fallback metadata: %s", fallback_exc)
                 job_log_hub.append(job_id, "ERROR", f"Workflow error: Could not generate fallback metadata: {fallback_exc}")
         _raise_if_cancelled(job_id, cancel_event)
-        
+
         # State transition to UPLOADING
         job_store.set_progress(job_id, 96, "UPLOADING")
         job_log_hub.append(job_id, "INFO", "Workflow transition: UPLOADING")
-        try:
-            youtube_upload_service.upload_job(
-                job_id,
-                progress=lambda progress, message: _upload_progress(
-                    job_id, cancel_event, progress, message
-                ),
-                log=lambda level, message: job_log_hub.append(job_id, level, message),
-            )
-        except YouTubeUploadError as exc:
-            job_store.set_status(job_id, "upload_failed")
-            _emit_progress(job_id, *job_progress.UPLOAD_FAILED)
-            job_log_hub.append(job_id, "WARNING", "Job output is ready; YouTube upload failed.")
-            logger.warning("Workflow upload stage failed for job %s: %s", job_id, exc)
-        else:
-            # set_status pins progress to 100 on success; broadcast that final bar.
+
+        if _memory_repo.is_completed(job_id, "upload_youtube"):
+            job_log_hub.append(job_id, "INFO", "Reused previous upload from agent memory.")
+            logger.info("[Job %s] AgentMemory reuse: upload_youtube already completed", job_id)
+            _workflow_event_repo.append(job_id, "upload_youtube", "reused")
+            # Still mark completed so the API reflects the right state.
             job_store.set_status(job_id, "completed", output_file=output_file)
             _emit_progress(job_id, *job_progress.UPLOAD_COMPLETE)
             job_log_hub.append(job_id, "INFO", "Job completed")
+        else:
+            try:
+                youtube_upload_service.upload_job(
+                    job_id,
+                    progress=lambda progress, message: _upload_progress(
+                        job_id, cancel_event, progress, message
+                    ),
+                    log=lambda level, message: job_log_hub.append(job_id, level, message),
+                )
+            except YouTubeUploadError as exc:
+                job_store.set_status(job_id, "upload_failed")
+                _emit_progress(job_id, *job_progress.UPLOAD_FAILED)
+                job_log_hub.append(job_id, "WARNING", "Job output is ready; YouTube upload failed.")
+                logger.warning("Workflow upload stage failed for job %s: %s", job_id, exc)
+                _memory_repo.save(job_id, "upload_youtube", "failed", output_summary=str(exc))
+                _workflow_event_repo.append(job_id, "upload_youtube", "failed")
+            else:
+                _memory_repo.save(job_id, "upload_youtube", "completed", artifact_path=output_file)
+                _workflow_event_repo.append(
+                    job_id, "upload_youtube", "completed",
+                    finished_at=datetime.now(timezone.utc).isoformat(),
+                )
+                job_store.set_status(job_id, "completed", output_file=output_file)
+                _emit_progress(job_id, *job_progress.UPLOAD_COMPLETE)
+                job_log_hub.append(job_id, "INFO", "Job completed")
     except WorkflowCancelledError:
         cancel_event.set()
         job_store.set_status(job_id, "cancelled")
@@ -500,3 +561,20 @@ def start_workflow(
         daemon=True,
     )
     thread.start()
+
+
+def resume_unfinished_jobs(
+    on_complete: Callable[[str], None] | None = None,
+) -> list[str]:
+    """Re-queue jobs that were not in a terminal state when the process stopped.
+
+    Reads the SQLite database for every job whose latest pipeline event did not
+    reach completion, then re-runs a fresh workflow for each one.
+    """
+    unfinished = _memory_repo.get_unfinished_jobs()
+    for job_id in unfinished:
+        logger.info("[Job %s] Resuming unfinished job from agent memory.", job_id)
+        job_log_hub.append(job_id, "INFO", "Resuming job from agent memory.")
+        job_store.set_status(job_id, "queued")
+        _workflow_event_repo.append(job_id, "resume", "triggered")
+    return unfinished

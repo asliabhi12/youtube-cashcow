@@ -25,6 +25,8 @@ from app.services.ai.provider_factory import (
     metadata_provider_name,
 )
 
+from app.services.workflow import resume_unfinished_jobs  # noqa: E402
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,6 +43,9 @@ def validate_metadata_configuration() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     validate_metadata_configuration()
+    unfinished = resume_unfinished_jobs()
+    if unfinished:
+        logger.info("Resumed %d unfinished job(s) from agent memory: %s", len(unfinished), unfinished)
     yield
 
 

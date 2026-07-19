@@ -1,0 +1,90 @@
+import sqlite3
+import threading
+from pathlib import Path
+
+DB_PATH = Path(__file__).resolve().parent.parent.parent.parent / "cashcow.db"
+
+_init_lock = threading.Lock()
+_init_done = False
+
+
+def _get_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
+
+
+def init_database() -> None:
+    global _init_done
+    if _init_done:
+        return
+    with _init_lock:
+        if _init_done:
+            return
+        conn = _get_connection()
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS jobs (
+                id TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS metadata (
+                id TEXT PRIMARY KEY,
+                job_id TEXT NOT NULL,
+                title TEXT,
+                description TEXT,
+                tags TEXT,
+                category TEXT,
+                model TEXT,
+                raw TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (job_id) REFERENCES jobs(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS workflow_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                status TEXT NOT NULL,
+                finished_at TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (job_id) REFERENCES jobs(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS agent_memory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL,
+                task TEXT NOT NULL,
+                status TEXT NOT NULL,
+                output_summary TEXT,
+                model TEXT,
+                artifact_path TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (job_id) REFERENCES jobs(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_agent_memory_job_task ON agent_memory(job_id, task);
+            CREATE INDEX IF NOT EXISTS idx_workflow_events_job ON workflow_events(job_id);
+        """)
+        conn.commit()
+        conn.close()
+        _init_done = True
+
+
+def reset_database_for_testing() -> None:
+    global _init_done
+    conn = _get_connection()
+    conn.executescript("""
+        DROP TABLE IF EXISTS agent_memory;
+        DROP TABLE IF EXISTS workflow_events;
+        DROP TABLE IF EXISTS metadata;
+        DROP TABLE IF EXISTS jobs;
+    """)
+    conn.commit()
+    conn.close()
+    _init_done = False
+    if DB_PATH.exists():
+        DB_PATH.unlink()
