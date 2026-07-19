@@ -46,8 +46,14 @@ class HardenedDownloader(Downloader):
     """
 
     def _build_ydl_options(self, progress_hook=None) -> dict[str, Any]:
-        """Base download options plus the configured hardening options."""
+        """Base download options plus the configured hardening and subtitle options."""
         opts = super()._build_ydl_options(progress_hook)
+        # Request English and Hindi subtitles so the workflow can extract a
+        # transcript for metadata enrichment. Both manual and auto-generated
+        # captions are enabled for maximum coverage.
+        opts["subtitleslangs"] = ["en", "hi"]
+        opts["subtitlesformat"] = "srt"
+        opts["writeautomaticsub"] = True
         # Logging happens once in ``download_video`` (this seam may be reached by
         # more than one code path), so suppress per-call logging here.
         return apply_hardening(opts, log_once=False)

@@ -39,7 +39,7 @@ from app.services import assets, job_progress  # noqa: E402
 from app.services.hardened_downloader import HardenedDownloader  # noqa: E402
 from app.services.job_logs import job_log_hub  # noqa: E402
 from app.services.jobs import job_store  # noqa: E402
-from app.services.metadata import metadata_service  # noqa: E402
+from app.services.metadata import _extract_transcript_text, metadata_service  # noqa: E402
 from app.services.presets import quality_overrides  # noqa: E402
 from app.services.profiles import resolve_config  # noqa: E402
 from app.services.youtube_upload import YouTubeUploadError, youtube_upload_service  # noqa: E402
@@ -278,6 +278,13 @@ def _execute(
     last_step: dict[str, str | None] = {"name": None}
     cancel_event = threading.Event()
     _register_cancel_event(job_id, cancel_event)
+    # Captured from the pipeline context and pushed to metadata_service before
+    # metadata generation so it can enrich the AI prompt with transcript text
+    # and video duration — without touching the engine or Job model.
+    _video_context: dict[str, str | float | None] = {
+        "transcript": None,
+        "duration": None,
+    }
 
     def on_progress(event: str, context: PipelineContext, record: StepRecord | None) -> None:
         _raise_if_cancelled(job_id, cancel_event)
@@ -307,6 +314,20 @@ def _execute(
                 title = context.metadata.get("download", {}).get("title")
                 output_name = _sanitize_filename(title, job_id)
                 job_store.set_output_name(job_id, output_name)
+                # Extract transcript from downloaded subtitle files and video
+                # duration for metadata enrichment.
+                download_meta = context.metadata.get("download", {})
+                _video_context["duration"] = download_meta.get("duration")
+                subtitle_paths = download_meta.get("subtitles", {})
+                if subtitle_paths:
+                    transcript = _extract_transcript_text(list(subtitle_paths.values()))
+                    _video_context["transcript"] = transcript
+                    if transcript:
+                        job_log_hub.append(
+                            job_id, "INFO",
+                            f"Transcript extracted from {len(subtitle_paths)} subtitle(s)"
+                            f" ({len(transcript)} chars)",
+                        )
         elif event == "step_failed" and record is not None:
             detail = record.detail or "unknown error"
             job_log_hub.append(job_id, "ERROR", f"Step '{record.name}' failed: {detail}")
@@ -324,6 +345,11 @@ def _execute(
         output_file = str(result.output_file) if result.output_file else None
         job_store.set_status(job_id, "running", output_file=output_file)
         _raise_if_cancelled(job_id, cancel_event)
+        metadata_service.store_video_context(
+            job_id,
+            transcript=str(_video_context["transcript"]) if _video_context["transcript"] else None,
+            video_duration=float(_video_context["duration"]) if _video_context["duration"] is not None else None,
+        )
         try:
             metadata_service.generate(
                 job_id,

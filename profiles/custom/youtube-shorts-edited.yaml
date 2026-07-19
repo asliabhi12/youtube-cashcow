@@ -1,0 +1,28 @@
+label: YouTube Shorts (edited)
+description: 'Punchy vertical look: zoomed 9:16, boosted audio, vivid grade, and an
+  overlay.'
+resize:
+  preset: shorts
+  zoom: 1.15
+audio:
+  effects:
+  - type: normalize
+  - type: bass
+    gain: 5.0
+  - type: treble
+    gain: 3.0
+  - type: volume
+    gain: 12.0
+  - type: speed
+    factor: 1.03
+color:
+  brightness: 0.05
+  contrast: 1.15
+  saturation: 1.2
+  gamma: 1.0
+  hue: 20.0
+  temperature: 0.0
+  tint: 0.0
+  vibrance: 0.0
+metadata_prompt: Write a clear, searchable YouTube title and description with clean
+  SEO, natural language, and accurate tags.

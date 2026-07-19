@@ -1,5 +1,6 @@
 """In-memory metadata resource and provider-backed generation service."""
 
+import re
 import time
 from datetime import datetime, timezone
 import logging
@@ -49,7 +50,9 @@ LANGUAGE HANDLING:
 
 RULES:
 - Never hallucinate facts or claims not present in the context
-- Use transcript and context only for factual content
+- The transcript is the primary source for factual content — extract key topics,
+  examples, and actionable takeaways from it
+- The Video duration helps gauge content depth; short videos need concise titles
 - The Title Seed is the highest-priority signal of intent
 - Generate clickable, SEO-optimized titles within YouTube's 100-character limit
 - Descriptions should be 2-3 paragraphs covering what the viewer will learn/see
@@ -64,6 +67,60 @@ Return ONLY a valid JSON object with exactly these fields:
 Do not include markdown, explanations, or any additional fields."""
 
 
+_DEVANAGARI_PATTERN = re.compile(r"[\u0900-\u097F]")
+_LATIN_PATTERN = re.compile(r"[a-zA-Z]")
+
+# Regex to strip WebVTT tags like <c>, </c>, <00:00:01.234>, etc.
+_VTT_TAG_PATTERN = re.compile(r"<[^>]+>")
+
+
+def _extract_transcript_text(subtitle_paths: list[str]) -> str | None:
+    """Read subtitle files (VTT or SRT) and return the combined plain text.
+
+    Strips WebVTT headers, timestamps, SRT numbering, and HTML-like tags.
+    Returns ``None`` when no readable files are found.
+    """
+    all_lines: list[str] = []
+    for fp in subtitle_paths:
+        path = Path(fp)
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped == "WEBVTT":
+                continue
+            if "-->" in stripped:
+                continue
+            if stripped.isdigit():
+                continue
+            cleaned = _VTT_TAG_PATTERN.sub("", stripped)
+            all_lines.append(cleaned)
+    if not all_lines:
+        return None
+    return " ".join(all_lines)
+
+
+def _detect_language(text: str | None) -> str | None:
+    """Detect language of the given text using simple heuristics.
+
+    - Devanagari characters present AND significant Latin characters → ``"Hinglish"``
+    - Only Devanagari characters (or mostly) → ``"Hindi"``
+    - No Devanagari characters → ``"English"``
+    - No text → ``None``
+    """
+    if not text or not text.strip():
+        return None
+    has_devanagari = bool(_DEVANAGARI_PATTERN.search(text))
+    has_latin = bool(_LATIN_PATTERN.search(text))
+    if has_devanagari:
+        return "Hinglish" if has_latin else "Hindi"
+    return "English"
+
+
 class MetadataNotFoundError(LookupError):
     """Raised when a job has no metadata."""
 
@@ -75,7 +132,28 @@ class DatabasePersistenceFailure(RuntimeError):
 class MetadataService:
     def __init__(self) -> None:
         self._metadata: dict[str, VideoMetadata] = {}
+        self._transcripts: dict[str, str] = {}
+        self._durations: dict[str, float] = {}
         self._lock = Lock()
+
+    def store_video_context(
+        self,
+        job_id: str,
+        *,
+        transcript: str | None = None,
+        video_duration: float | None = None,
+    ) -> None:
+        """Store video-level data (transcript, duration) for metadata enrichment.
+
+        Called by the workflow adapter after the download step completes, before
+        metadata generation begins. Neither value is required — if a video has no
+        subtitles the transcript stays ``None`` and the prompt omits it.
+        """
+        with self._lock:
+            if transcript and transcript.strip():
+                self._transcripts[job_id] = transcript.strip()
+            if video_duration is not None:
+                self._durations[job_id] = video_duration
 
     def get(self, job_id: str) -> VideoMetadata | None:
         with self._lock:
@@ -323,6 +401,12 @@ class MetadataService:
         if job is None:
             raise MetadataNotFoundError("Job not found")
 
+        with self._lock:
+            transcript = self._transcripts.get(job_id)
+            video_duration = self._durations.get(job_id)
+
+        detected_language = _detect_language(transcript)
+
         profile = profiles.get_profile(job.profile_id)
         creative_prompt = (
             profile.metadata_prompt
@@ -336,9 +420,9 @@ class MetadataService:
             creative_profile_prompt=creative_prompt,
             title_seed=title_seed,
             original_title=original_title,
-            video_duration=None,
-            transcript=None,
-            detected_language=None,
+            video_duration=video_duration,
+            transcript=transcript,
+            detected_language=detected_language,
             output_filename=job.output_name,
             topics=[],
             keywords=[],
@@ -349,9 +433,9 @@ class MetadataService:
             creative_profile_prompt=creative_prompt,
             title_seed=title_seed,
             original_title=original_title,
-            video_duration=None,
-            transcript=None,
-            detected_language=None,
+            video_duration=video_duration,
+            transcript=transcript,
+            detected_language=detected_language,
             output_filename=job.output_name,
             topics=[],
             keywords=[],

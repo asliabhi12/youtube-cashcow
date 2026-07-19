@@ -991,3 +991,338 @@ def test_job_id_is_included_in_provider_logs(monkeypatch, caplog, job):
 
     assert metadata is not None
     assert f"[Job {job.id}]" in caplog.text
+
+
+# ── Transcript extraction ───────────────────────────────────────────────────────
+
+
+def test_extract_transcript_text_returns_none_for_empty_paths():
+    assert metadata_module._extract_transcript_text([]) is None
+
+
+def test_extract_transcript_text_returns_none_for_missing_files():
+    assert metadata_module._extract_transcript_text(["/tmp/nonexistent.vtt"]) is None
+
+
+def test_extract_transcript_text_strips_vtt_formatting(tmp_path):
+    vtt_file = tmp_path / "test.en.vtt"
+    vtt_file.write_text(
+        "WEBVTT\n\n"
+        "00:00:01.000 --> 00:00:04.000\n"
+        "Hello everyone\n\n"
+        "00:00:05.000 --> 00:00:08.000\n"
+        "Welcome to my channel\n"
+    )
+    text = metadata_module._extract_transcript_text([str(vtt_file)])
+    assert text == "Hello everyone Welcome to my channel"
+
+
+def test_extract_transcript_text_strips_srt_formatting(tmp_path):
+    srt_file = tmp_path / "test.en.srt"
+    srt_file.write_text(
+        "1\n"
+        "00:00:01,000 --> 00:00:04,000\n"
+        "Hello everyone\n\n"
+        "2\n"
+        "00:00:05,000 --> 00:00:08,000\n"
+        "Welcome to my channel\n"
+    )
+    text = metadata_module._extract_transcript_text([str(srt_file)])
+    assert text == "Hello everyone Welcome to my channel"
+
+
+def test_extract_transcript_text_strips_vtt_tags(tmp_path):
+    vtt_file = tmp_path / "test.en.vtt"
+    vtt_file.write_text(
+        "WEBVTT\n\n"
+        "00:00:01.000 --> 00:00:04.000\n"
+        "<c>Hello</c> <c>everyone</c>\n"
+    )
+    text = metadata_module._extract_transcript_text([str(vtt_file)])
+    assert text == "Hello everyone"
+
+
+def test_extract_transcript_text_combines_multiple_languages(tmp_path):
+    en_file = tmp_path / "test.en.vtt"
+    en_file.write_text("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello\n")
+    hi_file = tmp_path / "test.hi.vtt"
+    hi_file.write_text(
+        "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nनमस्ते\n"
+    )
+    text = metadata_module._extract_transcript_text([str(en_file), str(hi_file)])
+    assert "Hello" in text
+    assert "नमस्ते" in text
+
+
+def test_extract_transcript_text_skips_unreadable_file(tmp_path, caplog):
+    vtt_file = tmp_path / "test.en.vtt"
+    vtt_file.write_text("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello\n")
+    missing = tmp_path / "missing.vtt"
+    text = metadata_module._extract_transcript_text([str(missing), str(vtt_file)])
+    assert text == "Hello"
+
+
+# ── Language detection ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (None, None),
+        ("", None),
+        ("   ", None),
+        ("Hello everyone welcome to my channel", "English"),
+        ("This is a test video about cooking", "English"),
+        ("नमस्ते आपका स्वागत है", "Hindi"),
+        ("यह एक हिंदी वीडियो है", "Hindi"),
+        ("Hello दोस्तों आज का video बहुत खास है", "Hinglish"),
+            ("Mumbai ki galiyon ka swaad - स्वाद", "Hinglish"),
+    ],
+)
+def test_detect_language(text, expected):
+    assert metadata_module._detect_language(text) == expected
+
+
+# ── Transcript and duration in generation context ───────────────────────────────
+
+
+def test_generation_context_includes_transcript_and_duration(monkeypatch, job):
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", lambda: MockMetadataProvider())
+    metadata_service.store_video_context(job.id, transcript="Hello everyone welcome", video_duration=120.5)
+    try:
+        context = metadata_service._build_generation_context(job.id, None)
+        assert context.transcript == "Hello everyone welcome"
+        assert context.video_duration == 120.5
+        assert "Transcript: Hello everyone welcome" in context.final_prompt
+        assert "Video duration: 120.5 seconds" in context.final_prompt
+    finally:
+        metadata_service.delete(job.id)
+
+
+def test_generation_context_detects_language_from_transcript(monkeypatch, job):
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", lambda: MockMetadataProvider())
+    metadata_service.store_video_context(job.id, transcript="नमस्ते आपका स्वागत है")
+    try:
+        context = metadata_service._build_generation_context(job.id, None)
+        assert context.detected_language == "Hindi"
+        assert "Detected language: Hindi" in context.final_prompt
+    finally:
+        metadata_service.delete(job.id)
+
+
+def test_generation_context_transcript_defaults_to_none(monkeypatch, job):
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", lambda: MockMetadataProvider())
+    context = metadata_service._build_generation_context(job.id, None)
+    assert context.transcript is None
+    assert context.video_duration is None
+    assert context.detected_language is None
+
+
+def test_generation_context_optional_values_omitted_when_none(monkeypatch, job):
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", lambda: MockMetadataProvider())
+    context = metadata_service._build_generation_context(job.id, None)
+    assert "Transcript:" not in context.final_prompt
+    assert "Video duration:" not in context.final_prompt
+    assert "Detected language:" not in context.final_prompt
+
+
+def test_store_video_context_does_not_leak_between_jobs():
+    job_a = job_store.create("https://youtube.example/watch?v=a")
+    job_b = job_store.create("https://youtube.example/watch?v=b")
+    try:
+        metadata_service.store_video_context(job_a.id, transcript="Hello", video_duration=30.0)
+        metadata_service.store_video_context(job_b.id, transcript="World", video_duration=60.0)
+        ctx_a = metadata_service._build_generation_context(job_a.id, None)
+        ctx_b = metadata_service._build_generation_context(job_b.id, None)
+        assert ctx_a.transcript == "Hello"
+        assert ctx_a.video_duration == 30.0
+        assert ctx_b.transcript == "World"
+        assert ctx_b.video_duration == 60.0
+    finally:
+        metadata_service.delete(job_a.id)
+        metadata_service.delete(job_b.id)
+        job_store.delete(job_a.id)
+        job_store.delete(job_b.id)
+
+
+def test_store_video_context_accepts_partial_data(monkeypatch, job):
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", lambda: MockMetadataProvider())
+    metadata_service.store_video_context(job.id, transcript="Only transcript")
+    try:
+        context = metadata_service._build_generation_context(job.id, None)
+        assert context.transcript == "Only transcript"
+        assert context.video_duration is None
+    finally:
+        metadata_service.delete(job.id)
+
+
+def test_store_video_context_partial_duration_only(monkeypatch):
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", lambda: MockMetadataProvider())
+    job = job_store.create("https://youtube.example/watch?v=dur-only")
+    try:
+        metadata_service.store_video_context(job.id, video_duration=90.0)
+        context = metadata_service._build_generation_context(job.id, None)
+        assert context.transcript is None
+        assert context.video_duration == 90.0
+    finally:
+        metadata_service.delete(job.id)
+        job_store.delete(job.id)
+
+
+def test_store_video_context_ignores_empty_transcript(monkeypatch, job):
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", lambda: MockMetadataProvider())
+    metadata_service.store_video_context(job.id, transcript="  ")
+    try:
+        context = metadata_service._build_generation_context(job.id, None)
+        assert context.transcript is None
+    finally:
+        metadata_service.delete(job.id)
+
+
+# ── Workflow integration: transcript/duration pipeline capture ──────────────────
+
+
+def test_workflow_captures_transcript_and_duration_from_pipeline(monkeypatch):
+    """Verify the workflow adapter stores transcript and duration on
+    the metadata service when the pipeline context provides them."""
+    from src.pipeline.context import PipelineContext
+    from src.pipeline.models import StepRecord, PipelineResult
+
+    captured_context = {}
+
+    class RecordingProvider:
+        name = "record"
+        model = "record-v1"
+
+        def generate(self, context):
+            captured_context["context"] = context
+            return {"title": "T", "description": "D", "tags": ["t"]}
+
+    class FakeRunnerWithSubs:
+        def __init__(self, settings, registry, downloader, progress):
+            self.progress = progress
+            self.downloader = downloader
+
+        def run(self, workflow):
+            step_record = StepRecord(
+                name="download",
+                type="step",
+                status="completed",
+                duration=1.0,
+            )
+            context = PipelineContext(
+                workspace=Path("/tmp"),
+                workflow_directory=Path("/tmp"),
+            )
+            context.metadata["download"] = {
+                "success": True,
+                "url": "https://youtube.com/watch?v=test",
+                "title": "Test Video",
+                "duration": 300.5,
+                "subtitles": {},
+                "file_path": "/tmp/test.mp4",
+                "error": None,
+            }
+            self.progress("step_started", context, step_record)
+            self.progress("step_completed", context, step_record)
+            return SimpleNamespace(output_file=Path("/tmp/output.mp4"))
+
+    monkeypatch.setattr(workflow_module, "PipelineRunner", FakeRunnerWithSubs)
+    monkeypatch.setattr(workflow_module, "default_registry", lambda: object())
+    monkeypatch.setattr(workflow_module, "HardenedDownloader", lambda settings: object())
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", RecordingProvider)
+    monkeypatch.setattr(
+        workflow_module.youtube_upload_service,
+        "upload_job",
+        _fake_successful_upload,
+    )
+
+    job = job_store.create("https://youtube.com/watch?v=pipeline-test")
+    try:
+        workflow_module._execute(job.id, object(), object())
+        ctx = captured_context["context"]
+        assert ctx.video_duration == 300.5
+        assert ctx.transcript is None  # No subtitle files existed
+        assert ctx.detected_language is None
+        assert "Video duration: 300.5 seconds" in ctx.final_prompt
+    finally:
+        metadata_service.delete(job.id)
+        job_store.delete(job.id)
+
+
+def test_workflow_captures_transcript_from_subtitle_files(monkeypatch, tmp_path):
+    from src.pipeline.context import PipelineContext
+    from src.pipeline.models import StepRecord
+
+    captured_context = {}
+
+    class RecordingProvider:
+        name = "record"
+        model = "record-v1"
+
+        def generate(self, context):
+            captured_context["context"] = context
+            return {"title": "T", "description": "D", "tags": ["t"]}
+
+    sub_file = tmp_path / "test.en.vtt"
+    sub_file.write_text(
+        "WEBVTT\n\n"
+        "00:00:01.000 --> 00:00:03.000\n"
+        "This is a test transcript\n\n"
+        "00:00:04.000 --> 00:00:06.000\n"
+        "With multiple lines of content\n"
+    )
+
+    class FakeRunnerWithSubs:
+        def __init__(self, settings, registry, downloader, progress):
+            self.progress = progress
+            self.downloader = downloader
+
+        def run(self, workflow):
+            step_record = StepRecord(
+                name="download",
+                type="step",
+                status="completed",
+                duration=1.0,
+            )
+            context = PipelineContext(
+                workspace=Path("/tmp"),
+                workflow_directory=Path("/tmp"),
+            )
+            context.metadata["download"] = {
+                "success": True,
+                "url": "https://youtube.com/watch?v=test",
+                "title": "Test Video",
+                "duration": 60.0,
+                "subtitles": {"en": str(sub_file)},
+                "file_path": str(tmp_path / "test.mp4"),
+                "error": None,
+            }
+            self.progress("step_started", context, step_record)
+            self.progress("step_completed", context, step_record)
+            return SimpleNamespace(output_file=Path("/tmp/output.mp4"))
+
+    monkeypatch.setattr(workflow_module, "PipelineRunner", FakeRunnerWithSubs)
+    monkeypatch.setattr(workflow_module, "default_registry", lambda: object())
+    monkeypatch.setattr(workflow_module, "HardenedDownloader", lambda settings: object())
+    monkeypatch.setattr(metadata_module, "get_metadata_provider", RecordingProvider)
+    monkeypatch.setattr(
+        workflow_module.youtube_upload_service,
+        "upload_job",
+        _fake_successful_upload,
+    )
+
+    job = job_store.create("https://youtube.com/watch?v=sub-test")
+    try:
+        workflow_module._execute(job.id, object(), object())
+        ctx = captured_context["context"]
+        assert ctx.video_duration == 60.0
+        assert ctx.transcript is not None
+        assert "This is a test transcript" in ctx.transcript
+        assert "With multiple lines of content" in ctx.transcript
+        assert ctx.detected_language == "English"
+        assert "Video duration: 60 seconds" in ctx.final_prompt
+        assert "This is a test transcript" in ctx.final_prompt
+    finally:
+        metadata_service.delete(job.id)
+        job_store.delete(job.id)

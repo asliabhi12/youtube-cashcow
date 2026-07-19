@@ -60,7 +60,7 @@ download:
   playlist: false
   write_thumbnail: false
   write_description: false
-  write_subtitles: false
+  write_subtitles: true
   retries: 3
   concurrent_downloads: 2
   overwrite: false
@@ -69,6 +69,13 @@ pipeline:
   workspace: "workspace"
   cleanup: true
   retries: 0
+
+metadata:
+  provider: openrouter
+  models:
+    - deepseek/deepseek-v4-flash:free
+    - tencent/hy3:free
+    - nvidia/nemotron-3-ultra:free
 
 performance:
   hardware: "auto"
