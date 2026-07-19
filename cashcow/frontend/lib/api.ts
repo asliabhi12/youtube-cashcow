@@ -23,8 +23,11 @@ export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
   return (await response.json()) as HealthResponse;
 }
 
-/** Lifecycle state of a job, mirroring the workflow's progress. */
-export type JobStatus = "pending" | "running" | "completed" | "failed";
+/**
+ * Lifecycle state of a job. "queued" means it is waiting its turn in the FIFO
+ * queue; only one job is ever "running" at a time.
+ */
+export type JobStatus = "pending" | "queued" | "running" | "completed" | "failed";
 
 /** A processing job as returned by the backend. */
 export interface Job {
@@ -43,6 +46,8 @@ export interface Job {
   output_name: string | null;
   /** Failure detail when the workflow fails; null otherwise. */
   error: string | null;
+  /** 1-based place in the FIFO queue while "queued"; null otherwise. */
+  queue_position: number | null;
 }
 
 /** A clip range in seconds. `end` must be greater than `start`. */
@@ -461,6 +466,23 @@ export async function getJob(jobId: string, signal?: AbortSignal): Promise<Job> 
   }
 
   return (await response.json()) as Job;
+}
+
+/**
+ * Delete a job, or remove it from the queue if it is still queued. The backend
+ * refuses to delete the running job (409); this surfaces that as a clear error
+ * so callers can tell the user why nothing happened.
+ */
+export async function deleteJob(jobId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    if (response.status === 409) {
+      throw new Error("The running job can't be removed; wait for it to finish.");
+    }
+    throw new Error(`Failed to delete job: ${response.status}`);
+  }
 }
 
 /** Fetch a job's log history. Throws if the server is unreachable or non-OK. */

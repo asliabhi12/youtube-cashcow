@@ -18,6 +18,8 @@ from urllib.parse import urlparse
 
 import yt_dlp
 
+from app.services.downloader_hardening import apply_hardening
+
 _SOCKET_TIMEOUT = 30
 
 
@@ -60,6 +62,10 @@ def fetch_metadata(url: str) -> dict[str, object]:
         "noplaylist": True,
         "socket_timeout": _SOCKET_TIMEOUT,
     }
+    # Same YouTube anti-bot hardening as the job downloader, so the trim-slider
+    # pre-fetch doesn't hit the "confirm you're not a bot" wall the download would
+    # otherwise clear. Logged by the downloader itself, so no per-lookup logging.
+    apply_hardening(opts)
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)

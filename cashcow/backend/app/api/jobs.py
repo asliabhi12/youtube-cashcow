@@ -18,9 +18,23 @@ from app.services import app_settings, profiles
 from app.services.job_logs import CLOSE, job_log_hub
 from app.services.jobs import job_store
 from app.services.presets import is_quality
-from app.services.workflow import start_workflow
+from app.services.queue import job_queue
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+
+def _with_queue_position(job: Job) -> Job:
+    """Return the job annotated with its live FIFO queue position.
+
+    Position is meaningful only while the job is ``queued``; it is recomputed
+    from the queue on every read (never stored), so it always reflects the
+    current line even as jobs ahead finish or are removed.
+    """
+    if job.status == "queued":
+        job.queue_position = job_queue.position(job.id)
+    else:
+        job.queue_position = None
+    return job
 
 
 def _sse(data: str, *, event: str | None = None) -> str:
@@ -36,11 +50,12 @@ def _sse(data: str, *, event: str | None = None) -> str:
 
 @router.post("", response_model=Job, status_code=status.HTTP_201_CREATED)
 def create_job(payload: JobCreate) -> Job:
-    """Create a pending job and start its workflow in the background.
+    """Create a job and submit it to the FIFO queue.
 
     Validates the creative profile (profile id and export quality must be known),
-    then returns immediately with the created job; processing runs asynchronously
-    and updates the job's status as the workflow progresses.
+    then returns immediately with the created job. The queue starts the job at
+    once if no other job is running, otherwise it waits its turn; either way the
+    job's status transitions asynchronously as it is queued, run, and finished.
     """
     profile_id = payload.effective_profile_id
     if not profiles.profile_exists(profile_id):
@@ -65,34 +80,57 @@ def create_job(payload: JobCreate) -> Job:
         app_settings.set_last_profile(profile_id)
     except Exception:  # noqa: BLE001 - persistence is non-critical here
         pass
-    start_workflow(
+    # Hand the job to the queue. It starts immediately when the single worker is
+    # idle, or waits in line otherwise. The workflow adapter is never called
+    # directly from here anymore, so multiple submits can never run concurrently.
+    job_queue.submit(
         job.id,
         job.url,
         trim=payload.trim,
         profile_id=profile_id,
         export_quality=payload.export_quality,
     )
-    return job
+    # Re-read so the response reflects the status the queue just set (queued or
+    # running) plus any position, rather than the transient "pending".
+    return _with_queue_position(job_store.get(job.id) or job)
 
 
 @router.get("", response_model=list[Job])
 def list_jobs() -> list[Job]:
-    """Return all jobs in creation order."""
-    return job_store.list()
+    """Return all jobs in creation order, each with its live queue position."""
+    return [_with_queue_position(job) for job in job_store.list()]
 
 
 @router.get("/{job_id}", response_model=Job)
 def get_job(job_id: str) -> Job:
-    """Return a single job, or 404 if it does not exist."""
+    """Return a single job (with its live queue position), or 404."""
     job = job_store.get(job_id)
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    return job
+    return _with_queue_position(job)
 
 
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_job(job_id: str) -> None:
-    """Delete a job, or 404 if it does not exist."""
+    """Delete a job (or remove it from the queue), with the running job protected.
+
+    * A ``queued`` job is pulled out of the FIFO queue and its record removed.
+    * A ``running`` job is refused with 409 — there is no safe mid-pipeline
+      cancel, so the running job cannot be deleted.
+    * A finished job (completed/failed) is simply removed from history.
+    * An unknown id is 404.
+    """
+    job = job_store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    if job.status == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The running job can't be deleted; wait for it to finish.",
+        )
+    # Remove it from the waiting line first (no-op if it isn't queued), so the
+    # worker never later tries to start a job whose record is gone.
+    job_queue.remove(job_id)
     if not job_store.delete(job_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 

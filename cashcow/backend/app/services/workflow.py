@@ -8,9 +8,11 @@ final result. Nothing under ``src/`` is modified; this module only adapts
 configuration and reports progress back to the job store.
 """
 
+import logging
 import re
 import sys
 import threading
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 
@@ -34,10 +36,13 @@ from src.pipeline.models import StepRecord  # noqa: E402
 
 from app.models.job import TrimRange  # noqa: E402
 from app.services import assets  # noqa: E402
+from app.services.hardened_downloader import HardenedDownloader  # noqa: E402
 from app.services.job_logs import job_log_hub  # noqa: E402
 from app.services.jobs import job_store  # noqa: E402
 from app.services.presets import quality_overrides  # noqa: E402
 from app.services.profiles import resolve_config  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 _SETTINGS_FILE = _PROJECT_ROOT / "settings.yaml"
 _OUTPUT_DIRNAME = "output"
@@ -206,8 +211,19 @@ def _overlay_options(overlay: dict) -> dict:
     return options
 
 
-def _execute(job_id: str, workflow: WorkflowDefinition, settings: Settings) -> None:
-    """Run the workflow to completion, mirroring its progress onto the job."""
+def _execute(
+    job_id: str,
+    workflow: WorkflowDefinition,
+    settings: Settings,
+    on_complete: Callable[[str], None] | None = None,
+) -> None:
+    """Run the workflow to completion, mirroring its progress onto the job.
+
+    ``on_complete`` (if given) is called with the job id once the job reaches a
+    terminal state, after logs are closed. The queue uses it to start the next
+    job; it runs on this job's background thread and its failures are swallowed
+    so a callback error can never crash the worker or wedge the queue.
+    """
 
     def on_progress(event: str, context: PipelineContext, record: StepRecord | None) -> None:
         # Translate the engine's own progress events into high-level, per-job
@@ -233,7 +249,16 @@ def _execute(job_id: str, workflow: WorkflowDefinition, settings: Settings) -> N
             job_log_hub.append(job_id, "ERROR", f"Step '{record.name}' failed: {detail}")
 
     try:
-        runner = PipelineRunner(settings, default_registry(), progress=on_progress)
+        # Inject the hardened downloader so YouTube anti-bot options (browser
+        # cookies + remote challenge solver) apply to every job. The engine and
+        # its default downloader are untouched; this only swaps which downloader
+        # the runner uses.
+        runner = PipelineRunner(
+            settings,
+            default_registry(),
+            downloader=HardenedDownloader(settings),
+            progress=on_progress,
+        )
         result = runner.run(workflow)
         output_file = str(result.output_file) if result.output_file else None
         job_store.set_status(job_id, "completed", output_file=output_file)
@@ -247,6 +272,13 @@ def _execute(job_id: str, workflow: WorkflowDefinition, settings: Settings) -> N
         # Close the log stream in every case so subscribed SSE clients receive
         # a terminal event and disconnect instead of hanging on the queue.
         job_log_hub.close(job_id)
+        # Signal completion last, so the next queued job only starts once this
+        # one is fully terminal. A callback failure must not crash the worker.
+        if on_complete is not None:
+            try:
+                on_complete(job_id)
+            except Exception:  # noqa: BLE001 - completion hook is best-effort
+                logger.exception("on_complete hook failed for job %s", job_id)
 
 
 def start_workflow(
@@ -256,12 +288,22 @@ def start_workflow(
     trim: TrimRange | None = None,
     profile_id: str = "custom",
     export_quality: str = "balanced",
+    on_complete: Callable[[str], None] | None = None,
 ) -> None:
     """Start the engine for a job without blocking the caller.
 
     Builds the full pipeline for the job's creative profile (trim range, creative
     profile, export quality), then hands execution to a daemon thread so the HTTP
     request returns immediately while the pipeline runs in the background.
+
+    ``on_complete`` is invoked with the job id once the job reaches a terminal
+    state (from the background thread). The queue passes this to start the next
+    job; the workflow itself neither knows nor cares that a queue exists.
+
+    Building the workflow happens synchronously (before the thread starts), so a
+    build error — e.g. an overlay asset that no longer resolves — propagates to
+    the caller instead of being buried in the background thread. The queue relies
+    on this to fail such a job and move on.
     """
     # Record the pre-execution lifecycle before handing off to the thread, so
     # the history always opens with these lines regardless of when a client
@@ -272,7 +314,7 @@ def start_workflow(
     settings = _settings_for_quality(export_quality)
     thread = threading.Thread(
         target=_execute,
-        args=(job_id, workflow, settings),
+        args=(job_id, workflow, settings, on_complete),
         name=f"workflow-{job_id}",
         daemon=True,
     )

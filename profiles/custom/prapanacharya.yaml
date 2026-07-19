@@ -20,12 +20,12 @@ overlay:
   asset: yellow.jpg
   x: center
   y: center
-  scale: 1.0
+  scale: 1.2
   opacity: 1.0
   rotation: 0.0
   layer: 0
   mask:
     type: ellipse
-    feather: 0.0
+    feather: 64.0
     rotation: 0.0
     invert: true

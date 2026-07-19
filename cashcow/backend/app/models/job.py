@@ -5,10 +5,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-# Job lifecycle states, mirroring the workflow's progress: a job is "pending"
-# until its workflow starts, "running" while the engine executes, then either
-# "completed" or "failed" once the pipeline finishes.
-JobStatus = Literal["pending", "running", "completed", "failed"]
+# Job lifecycle states. A job is "pending" the instant it is created, "queued"
+# while it waits its turn in the FIFO queue, "running" while the engine executes
+# it, then either "completed" or "failed" once the pipeline finishes. Only one
+# job is ever "running" at a time.
+JobStatus = Literal["pending", "queued", "running", "completed", "failed"]
 
 # Severity of a per-job log entry. INFO for normal progress, WARNING for
 # recoverable issues (e.g. a retried step), ERROR when the job fails.
@@ -96,3 +97,6 @@ class Job(BaseModel):
     # the on-disk file is always ``{id}.mp4`` regardless.
     output_name: str | None = None
     error: str | None = None
+    # 1-based place in the FIFO queue while the job is "queued"; None otherwise.
+    # Computed fresh for each response from the live queue, never stored.
+    queue_position: int | None = None
