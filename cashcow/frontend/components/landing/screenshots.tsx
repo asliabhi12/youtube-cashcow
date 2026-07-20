@@ -1,76 +1,63 @@
 "use client";
 
 import { motion } from "framer-motion";
-import {
-  LayoutDashboard,
-  Workflow,
-  FileText,
-  ListOrdered,
-  ScrollText,
-} from "lucide-react";
+import { LayoutDashboard, ListOrdered, ScrollText } from "lucide-react";
 
-const MOCKS = [
-  { icon: LayoutDashboard, label: "Dashboard", color: "from-purple-500/20 to-blue-500/10" },
-  { icon: Workflow, label: "Workflow", color: "from-blue-500/20 to-purple-500/10" },
-  { icon: FileText, label: "Metadata Editor", color: "from-purple-500/20 to-blue-500/10" },
-  { icon: ListOrdered, label: "Job Queue", color: "from-blue-500/20 to-purple-500/10" },
-  { icon: ScrollText, label: "Logs", color: "from-purple-500/20 to-blue-500/10" },
+const PREVIEWS = [
+  { icon: LayoutDashboard, title: "Dashboard", rows: ["YouTube URL", "Creative profile", "Export quality"] },
+  { icon: ListOrdered, title: "Job queue", rows: ["Running", "Queued", "Completed"] },
+  { icon: ScrollText, title: "Logs", rows: ["Download", "Encode", "Metadata"] },
 ];
 
 export function Screenshots() {
   return (
-    <section className="relative py-24">
+    <section className="border-b py-24">
       <div className="mx-auto max-w-7xl px-6">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.6 }}
-          className="text-center"
-        >
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            <span className="bg-gradient-to-r from-purple-300 to-blue-300 bg-clip-text text-transparent">
-              Interface
-            </span>
-          </h2>
-          <p className="mt-3 text-sm text-muted-foreground">
-            Clean, intuitive screens for every part of the workflow.
+        <div className="max-w-2xl">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-primary">
+            Interface
           </p>
-        </motion.div>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+            Purpose-built screens for repeated workflow use.
+          </h2>
+        </div>
 
-        <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {MOCKS.map((m, i) => (
+        <div className="mt-10 grid gap-4 lg:grid-cols-3">
+          {PREVIEWS.map((preview, index) => (
             <motion.div
-              key={m.label}
-              initial={{ opacity: 0, y: 30 }}
+              key={preview.title}
+              initial={{ opacity: 0, y: 16 }}
               whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-80px" }}
-              transition={{ duration: 0.5, delay: i * 0.08 }}
-              className="group overflow-hidden rounded-xl border border-white/5 bg-gradient-to-br from-white/[0.02] to-white/[0.01] backdrop-blur-sm transition-all hover:border-purple-500/20"
+              viewport={{ once: true }}
+              transition={{ duration: 0.35, delay: index * 0.05 }}
+              className="overflow-hidden rounded-xl border bg-card/75 shadow-xl shadow-[var(--shadow-color)]"
             >
-              {/* Mock browser chrome */}
-              <div className="flex items-center gap-1.5 border-b border-white/5 px-4 py-3">
-                <span className="size-2.5 rounded-full bg-red-500/60" />
-                <span className="size-2.5 rounded-full bg-yellow-500/60" />
-                <span className="size-2.5 rounded-full bg-green-500/60" />
-                <span className="ml-3 flex-1 rounded bg-white/5 px-3 py-1 text-[10px] text-muted-foreground">
-                  cashcow.local/{m.label.toLowerCase().replace(/\s+/g, "-")}
+              <div className="flex items-center justify-between border-b px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <preview.icon className="size-4 text-primary" />
+                  <span className="text-sm font-semibold">{preview.title}</span>
+                </div>
+                <span className="rounded-full bg-success-surface px-2 py-0.5 text-[11px] font-medium text-success-foreground">
+                  Live
                 </span>
               </div>
-
-              {/* Mock content area */}
-              <div className="flex flex-col items-center justify-center p-12">
-                <div
-                  className={`flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br ${m.color} mb-4`}
-                >
-                  <m.icon size={28} className="text-purple-300" />
-                </div>
-                <span className="text-sm font-medium text-foreground">
-                  {m.label}
-                </span>
-                <span className="mt-1 text-xs text-muted-foreground">
-                  Interface Preview
-                </span>
+              <div className="space-y-3 p-4">
+                {preview.rows.map((row, rowIndex) => (
+                  <div key={row} className="rounded-lg border bg-background/45 p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">{row}</span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        0{rowIndex + 1}
+                      </span>
+                    </div>
+                    <div className="mt-2 h-1.5 rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{ width: `${90 - rowIndex * 18}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
             </motion.div>
           ))}

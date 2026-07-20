@@ -119,7 +119,7 @@ export function ProfileEditor({ editor, qualities, disabled = false }: ProfileEd
           onDescriptionChange={(description) => update({ description })}
         />
         {issueFor("general") !== undefined && (
-          <p className="text-xs text-red-500">{issueFor("general")}</p>
+          <p className="text-xs text-danger-foreground">{issueFor("general")}</p>
         )}
       </EditorSection>
 
@@ -139,7 +139,7 @@ export function ProfileEditor({ editor, qualities, disabled = false }: ProfileEd
           />
         )}
         {issueFor("resize") !== undefined && (
-          <p className="text-xs text-red-500">{issueFor("resize")}</p>
+          <p className="text-xs text-danger-foreground">{issueFor("resize")}</p>
         )}
       </EditorSection>
 
@@ -195,7 +195,7 @@ export function ProfileEditor({ editor, qualities, disabled = false }: ProfileEd
           />
         )}
         {issueFor("overlay") !== undefined && (
-          <p className="text-xs text-red-500">{issueFor("overlay")}</p>
+          <p className="text-xs text-danger-foreground">{issueFor("overlay")}</p>
         )}
       </EditorSection>
 

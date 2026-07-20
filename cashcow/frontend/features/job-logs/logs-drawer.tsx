@@ -10,9 +10,9 @@ import { type LogStreamStatus, useJobLogs } from "./use-job-logs";
 
 /** Tailwind text color per log level. */
 const LEVEL_COLOR: Record<JobLogLevel, string> = {
-  INFO: "text-sky-400",
-  WARNING: "text-amber-400",
-  ERROR: "text-red-400",
+  INFO: "text-info-foreground",
+  WARNING: "text-warning-foreground",
+  ERROR: "text-danger-foreground",
 };
 
 /** Render an entry's timestamp as HH:MM:SS, falling back to the raw value. */
@@ -111,7 +111,7 @@ export function LogsDrawer({ job, onClose }: LogsDrawerProps) {
         aria-hidden={!open}
         onClick={onClose}
         className={cn(
-          "fixed inset-0 z-40 bg-black/50 transition-opacity duration-200",
+          "fixed inset-0 z-40 bg-foreground/35 backdrop-blur-sm transition-opacity duration-200",
           open ? "opacity-100" : "pointer-events-none opacity-0",
         )}
       />
@@ -123,7 +123,7 @@ export function LogsDrawer({ job, onClose }: LogsDrawerProps) {
         aria-label="Job logs"
         aria-hidden={!open}
         className={cn(
-          "fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col border-l bg-background shadow-xl transition-transform duration-200",
+          "fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col border-l bg-background shadow-xl shadow-[var(--shadow-color)] transition-transform duration-200",
           open ? "translate-x-0" : "translate-x-full",
         )}
       >
@@ -155,10 +155,10 @@ export function LogsDrawer({ job, onClose }: LogsDrawerProps) {
             <div
               ref={scrollRef}
               onScroll={handleScroll}
-              className="flex-1 overflow-y-auto bg-zinc-950 px-4 py-3 font-mono text-xs leading-relaxed text-zinc-100"
+              className="flex-1 overflow-y-auto bg-surface px-4 py-3 font-mono text-xs leading-relaxed text-foreground"
             >
               {entries.length === 0 ? (
-                <p className="text-zinc-500">Waiting for logs…</p>
+                <p className="text-muted-foreground">Waiting for logs…</p>
               ) : (
                 entries.map((entry, index) => (
                   <LogLine key={index} entry={entry} />
@@ -176,11 +176,11 @@ export function LogsDrawer({ job, onClose }: LogsDrawerProps) {
 function LogLine({ entry }: { entry: JobLogEntry }) {
   return (
     <div className="flex gap-3 whitespace-pre-wrap break-words py-0.5">
-      <span className="shrink-0 text-zinc-500">{formatTime(entry.timestamp)}</span>
+      <span className="shrink-0 text-muted-foreground">{formatTime(entry.timestamp)}</span>
       <span className={cn("w-16 shrink-0 font-semibold", LEVEL_COLOR[entry.level])}>
         {entry.level}
       </span>
-      <span className="min-w-0 flex-1 text-zinc-100">{entry.message}</span>
+      <span className="min-w-0 flex-1 text-foreground">{entry.message}</span>
     </div>
   );
 }
@@ -189,12 +189,12 @@ function LogLine({ entry }: { entry: JobLogEntry }) {
 function StatusDot({ status }: { status: LogStreamStatus }) {
   const color =
     status === "streaming"
-      ? "bg-emerald-500"
+      ? "bg-success"
       : status === "done"
-        ? "bg-zinc-400"
+        ? "bg-muted-foreground"
         : status === "error"
-          ? "bg-red-500"
-          : "bg-amber-500";
+          ? "bg-danger"
+          : "bg-warning";
   return (
     <span
       className={cn(

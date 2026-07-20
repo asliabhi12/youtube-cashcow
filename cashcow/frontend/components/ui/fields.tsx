@@ -39,7 +39,7 @@ export function CheckboxField({
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 size-4 accent-primary disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-0.5 size-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
       />
       <label htmlFor={id} className="flex flex-col gap-0.5">
         <span className="text-sm font-medium leading-none">{label}</span>
@@ -85,7 +85,7 @@ export function DropdownField({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
+        className="h-10 w-full rounded-md border border-input bg-background/70 px-3 py-2 text-sm shadow-sm shadow-[var(--shadow-color)] transition-all duration-200 hover:border-primary/35 focus-visible:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -160,7 +160,7 @@ export function NumberField({
             if (max !== undefined) next = Math.min(max, next);
             onChange(next);
           }}
-          className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm tabular-nums shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-10 w-full rounded-md border border-input bg-background/70 px-3 py-2 text-sm tabular-nums shadow-sm shadow-[var(--shadow-color)] transition-all duration-200 placeholder:text-muted-foreground/70 hover:border-primary/35 focus-visible:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
         />
         {unit !== undefined && (
           <span className="shrink-0 text-xs text-muted-foreground">{unit}</span>
@@ -193,7 +193,7 @@ export function TextField({
 }: TextFieldProps) {
   const id = useId();
   const shared =
-    "w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50";
+    "w-full rounded-md border border-input bg-background/70 px-3 py-2 text-sm shadow-sm shadow-[var(--shadow-color)] transition-all duration-200 placeholder:text-muted-foreground/70 hover:border-primary/35 focus-visible:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50";
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       <label htmlFor={id} className="text-sm font-medium">

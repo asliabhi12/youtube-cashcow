@@ -1,94 +1,78 @@
 "use client";
 
 import { motion } from "framer-motion";
-import {
-  Cpu,
-  Sparkles,
-  Workflow,
-  Route,
-  Upload,
-  Shield,
-} from "lucide-react";
+import { Cpu, Route, Shield, Sparkles, Upload, Workflow } from "lucide-react";
 
 const FEATURES = [
   {
     icon: Cpu,
-    title: "Offline First",
+    title: "Local media engine",
     description:
-      "All downloading, processing, transcription, and AI automation happens locally on your device. No cloud processing required.",
+      "Downloading, trimming, encoding, transcription, and file handling run on your machine.",
   },
   {
     icon: Sparkles,
-    title: "AI Metadata",
+    title: "AI metadata generation",
     description:
-      "Generate optimized titles, descriptions, and tags using multiple AI providers with automatic model fallback.",
+      "Create titles, descriptions, and tags with provider fallback when a model is unavailable.",
   },
   {
     icon: Workflow,
-    title: "Smart Workflow",
+    title: "Reusable creative profiles",
     description:
-      "Resume interrupted jobs. Skip completed work. Persistent task memory prevents redundant processing.",
+      "Save resize, audio, colour, overlay, and export settings as profiles for repeatable runs.",
   },
   {
     icon: Route,
-    title: "Automatic Model Routing",
+    title: "Resumable workflows",
     description:
-      "If one AI provider fails, CashCow automatically switches to another configured model without losing progress.",
+      "Skip completed work and recover interrupted jobs without restarting the entire pipeline.",
   },
   {
     icon: Upload,
-    title: "YouTube Publishing",
+    title: "Publishing controls",
     description:
-      "Upload videos directly to YouTube with retry support and progress tracking throughout the pipeline.",
+      "Export files or upload to YouTube with retry support and visible job progress.",
   },
   {
     icon: Shield,
-    title: "Privacy",
+    title: "Private by default",
     description:
-      "Your videos stay on your computer. Cloud services are optional and never required for core functionality.",
+      "Core processing stays local, with cloud AI and YouTube services used only when configured.",
   },
 ];
 
 export function Features() {
   return (
-    <section id="features" className="relative py-24">
+    <section id="features" className="border-b py-24">
       <div className="mx-auto max-w-7xl px-6">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.6 }}
-          className="text-center"
-        >
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            <span className="bg-gradient-to-r from-purple-300 to-blue-300 bg-clip-text text-transparent">
-              Everything You Need
-            </span>
-          </h2>
-          <p className="mt-3 text-sm text-muted-foreground">
-            A complete local-first video automation pipeline.
+        <div className="max-w-2xl">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-primary">
+            Platform
           </p>
-        </motion.div>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+            Built for creators who want an operations-grade workflow.
+          </h2>
+          <p className="mt-4 text-base leading-7 text-muted-foreground">
+            CashCow brings the media pipeline, AI copywriting, queue state, and publishing handoff into one calm interface.
+          </p>
+        </div>
 
-        <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map((f, i) => (
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {FEATURES.map((feature, index) => (
             <motion.div
-              key={f.title}
-              initial={{ opacity: 0, y: 30 }}
+              key={feature.title}
+              initial={{ opacity: 0, y: 18 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-80px" }}
-              transition={{ duration: 0.5, delay: i * 0.08 }}
-              className="group rounded-xl border border-white/5 bg-white/[0.02] p-6 backdrop-blur-sm transition-all hover:border-purple-500/20 hover:bg-white/[0.04]"
+              transition={{ duration: 0.4, delay: index * 0.04 }}
+              className="group rounded-xl border bg-card/70 p-5 shadow-sm shadow-[var(--shadow-color)] transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-lg"
             >
-              <div className="flex size-10 items-center justify-center rounded-lg bg-purple-500/10 text-purple-400">
-                <f.icon size={20} />
+              <div className="grid size-10 place-items-center rounded-md border border-primary/20 bg-primary/10 text-primary">
+                <feature.icon className="size-5" />
               </div>
-              <h3 className="mt-4 font-semibold text-foreground">
-                {f.title}
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                {f.description}
-              </p>
+              <h3 className="mt-5 text-base font-semibold tracking-tight">{feature.title}</h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{feature.description}</p>
             </motion.div>
           ))}
         </div>

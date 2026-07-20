@@ -5,8 +5,8 @@ import { useServerStatus } from "@/features/server-status/use-server-status";
 
 const CONFIG = {
   checking: { label: "Checking…", dot: "bg-muted-foreground" },
-  online: { label: "Server Running", dot: "bg-green-500" },
-  offline: { label: "Server Offline", dot: "bg-red-500" },
+  online: { label: "Server Running", dot: "bg-success" },
+  offline: { label: "Server Offline", dot: "bg-warning" },
 } as const;
 
 /** Header badge showing whether the local backend is reachable. */
@@ -15,7 +15,7 @@ export function ServerStatusIndicator() {
   const { label, dot } = CONFIG[status];
 
   return (
-    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+    <div className="flex items-center gap-2 rounded-full border bg-card/70 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm">
       <span
         className={cn(
           "size-2 rounded-full",

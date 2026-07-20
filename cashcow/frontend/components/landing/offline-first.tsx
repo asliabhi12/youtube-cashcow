@@ -1,49 +1,41 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Server, WifiOff } from "lucide-react";
+import { Server, ShieldCheck, WifiOff } from "lucide-react";
 
 export function OfflineFirst() {
   return (
-    <section className="relative py-24">
-      <div className="mx-auto max-w-5xl px-6">
+    <section className="border-b py-24">
+      <div className="mx-auto max-w-7xl px-6">
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={{ opacity: 0, y: 16 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.6 }}
-          className="relative overflow-hidden rounded-2xl border border-purple-500/10 bg-gradient-to-br from-purple-900/20 via-blue-900/10 to-black p-8 sm:p-12"
+          transition={{ duration: 0.45 }}
+          className="grid gap-8 rounded-xl border bg-card/80 p-6 shadow-xl shadow-[var(--shadow-color)] lg:grid-cols-[minmax(0,1fr)_24rem] lg:p-8"
         >
-          {/* Decorative blobs */}
-          <div className="pointer-events-none absolute -right-20 -top-20 h-60 w-60 rounded-full bg-purple-600/10 blur-[80px]" />
-          <div className="pointer-events-none absolute -bottom-20 -left-20 h-60 w-60 rounded-full bg-blue-600/10 blur-[80px]" />
-
-          <div className="relative z-10 flex flex-col items-center text-center">
-            <div className="flex size-14 items-center justify-center rounded-2xl bg-purple-500/10">
-              <WifiOff size={28} className="text-purple-400" />
+          <div>
+            <div className="grid size-11 place-items-center rounded-md border border-primary/20 bg-primary/10 text-primary">
+              <WifiOff className="size-5" />
             </div>
-
-            <h2 className="mt-6 text-3xl font-bold tracking-tight sm:text-4xl">
-              <span className="bg-gradient-to-r from-purple-300 to-blue-300 bg-clip-text text-transparent">
-                Built for Local AI
-              </span>
+            <h2 className="mt-6 text-3xl font-semibold tracking-tight sm:text-4xl">
+              Demo mode is a first-class state.
             </h2>
-
-            <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-              CashCow is designed for creators who prefer local processing over
-              cloud uploads. Your videos remain on your device throughout the
-              workflow. The hosted demo showcases the interface only.
+            <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">
+              CashCow is designed to run with a local backend. When that backend is unavailable, the interface clearly switches to a preview state instead of surfacing broken workflow errors.
             </p>
+          </div>
 
-            <div className="mt-8 flex items-center gap-8 text-sm text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <Server size={16} className="text-purple-400" />
-                <span>100% Local</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <WifiOff size={16} className="text-purple-400" />
-                <span>No Cloud Required</span>
-              </div>
+          <div className="grid gap-3">
+            <div className="rounded-lg border bg-background/45 p-4">
+              <Server className="size-4 text-primary" />
+              <p className="mt-3 text-sm font-semibold">Local backend</p>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">Enables real downloads, processing, metadata, and publishing.</p>
+            </div>
+            <div className="rounded-lg border bg-background/45 p-4">
+              <ShieldCheck className="size-4 text-primary" />
+              <p className="mt-3 text-sm font-semibold">Private workflow</p>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">Core video operations stay on your machine by default.</p>
             </div>
           </div>
         </motion.div>

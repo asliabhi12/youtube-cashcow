@@ -13,7 +13,7 @@ def _now() -> str:
 class JobRepository:
 
     def upsert(self, job_id: str) -> None:
-        logger.info("[JobRepository.upsert] db=%s job=%s", DB_PATH, job_id)
+        logger.info("[JobRepository.upsert] db=%s job=%s", DB_PATH.resolve(), job_id)
         conn = _get_connection()
         conn.execute(
             """INSERT INTO jobs (id, created_at, updated_at)
@@ -25,7 +25,7 @@ class JobRepository:
         conn.close()
 
     def get(self, job_id: str) -> dict | None:
-        logger.info("[JobRepository.get] db=%s job=%s", DB_PATH, job_id)
+        logger.info("[JobRepository.get] db=%s job=%s", DB_PATH.resolve(), job_id)
         conn = _get_connection()
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         conn.close()
@@ -35,7 +35,7 @@ class JobRepository:
 class MetadataRepository:
 
     def save(self, job_id: str, **fields: str | None) -> None:
-        logger.info("[MetadataRepository.save] db=%s job=%s fields=%s", DB_PATH, job_id, list(fields))
+        logger.info("[MetadataRepository.save] db=%s job=%s fields=%s", DB_PATH.resolve(), job_id, list(fields))
         conn = _get_connection()
         conn.execute(
             """INSERT INTO metadata (id, job_id, title, description, tags, category, model, raw)
@@ -59,7 +59,7 @@ class MetadataRepository:
         conn.close()
 
     def get(self, job_id: str) -> dict | None:
-        logger.info("[MetadataRepository.get] db=%s job=%s", DB_PATH, job_id)
+        logger.info("[MetadataRepository.get] db=%s job=%s", DB_PATH.resolve(), job_id)
         conn = _get_connection()
         row = conn.execute(
             "SELECT * FROM metadata WHERE job_id = ? ORDER BY created_at DESC LIMIT 1",
@@ -79,7 +79,7 @@ class WorkflowEventRepository:
         *,
         finished_at: str | None = None,
     ) -> None:
-        logger.info("[WorkflowEventRepository.append] db=%s job=%s stage=%s status=%s", DB_PATH, job_id, stage, status)
+        logger.info("[WorkflowEventRepository.append] db=%s job=%s stage=%s status=%s", DB_PATH.resolve(), job_id, stage, status)
         conn = _get_connection()
         conn.execute(
             "INSERT INTO workflow_events (job_id, stage, status, finished_at) VALUES (?, ?, ?, ?)",
@@ -89,7 +89,7 @@ class WorkflowEventRepository:
         conn.close()
 
     def latest_event(self, job_id: str) -> dict | None:
-        logger.info("[WorkflowEventRepository.latest_event] db=%s job=%s", DB_PATH, job_id)
+        logger.info("[WorkflowEventRepository.latest_event] db=%s job=%s", DB_PATH.resolve(), job_id)
         conn = _get_connection()
         row = conn.execute(
             """SELECT * FROM workflow_events
@@ -113,7 +113,7 @@ class MemoryRepository:
         model: str | None = None,
         artifact_path: str | None = None,
     ) -> None:
-        logger.info("[MemoryRepository.save] db=%s job=%s task=%s status=%s", DB_PATH, job_id, task, status)
+        logger.info("[MemoryRepository.save] db=%s job=%s task=%s status=%s", DB_PATH.resolve(), job_id, task, status)
         conn = _get_connection()
         conn.execute(
             """INSERT INTO agent_memory (job_id, task, status, output_summary, model, artifact_path)
@@ -124,7 +124,7 @@ class MemoryRepository:
         conn.close()
 
     def is_completed(self, job_id: str, task: str) -> bool:
-        logger.info("[MemoryRepository.is_completed] db=%s job=%s task=%s", DB_PATH, job_id, task)
+        logger.info("[MemoryRepository.is_completed] db=%s job=%s task=%s", DB_PATH.resolve(), job_id, task)
         conn = _get_connection()
         row = conn.execute(
             """SELECT status FROM agent_memory
@@ -136,7 +136,7 @@ class MemoryRepository:
         return row is not None and row["status"] == "completed"
 
     def get_unfinished_jobs(self) -> list[str]:
-        logger.info("[MemoryRepository.get_unfinished_jobs] db=%s", DB_PATH)
+        logger.info("[MemoryRepository.get_unfinished_jobs] db=%s", DB_PATH.resolve())
         conn = _get_connection()
         rows = conn.execute(
             """SELECT DISTINCT m.job_id
@@ -153,7 +153,7 @@ class MemoryRepository:
         return [r["job_id"] for r in rows]
 
     def get_task(self, job_id: str, task: str) -> dict | None:
-        logger.info("[MemoryRepository.get_task] db=%s job=%s task=%s", DB_PATH, job_id, task)
+        logger.info("[MemoryRepository.get_task] db=%s job=%s task=%s", DB_PATH.resolve(), job_id, task)
         conn = _get_connection()
         row = conn.execute(
             """SELECT * FROM agent_memory
@@ -165,7 +165,7 @@ class MemoryRepository:
         return dict(row) if row else None
 
     def clear_job(self, job_id: str) -> None:
-        logger.info("[MemoryRepository.clear_job] db=%s job=%s", DB_PATH, job_id)
+        logger.info("[MemoryRepository.clear_job] db=%s job=%s", DB_PATH.resolve(), job_id)
         conn = _get_connection()
         conn.execute("DELETE FROM agent_memory WHERE job_id = ?", (job_id,))
         conn.execute("DELETE FROM workflow_events WHERE job_id = ?", (job_id,))

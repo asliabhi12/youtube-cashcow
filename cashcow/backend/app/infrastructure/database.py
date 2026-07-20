@@ -3,9 +3,12 @@ import sqlite3
 import threading
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent.parent.parent.parent / "cashcow.db"
+DB_PATH = Path(__file__).resolve().parents[4] / "cashcow.db"
+
+
 
 logger = logging.getLogger(__name__)
+
 
 _init_lock = threading.Lock()
 _init_done = False
@@ -23,24 +26,63 @@ def _get_connection() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
+    
+    # Log every discovered table
+    try:
+        tables = [row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        logger.info("[_get_connection] resolved database path: %s", resolved)
+        logger.info("[_get_connection] discovered tables: %s", tables)
+    except Exception as exc:
+        logger.error("[_get_connection] failed to list tables: %s", exc)
+        
     return conn
 
 
 def init_database() -> None:
     global _init_done
     resolved = str(DB_PATH.resolve())
-    if _init_done:
-        logger.info("[init_database] skipped (already initialised, db=%s)", resolved)
+    
+    # Verify if database exists and contains the expected tables
+    db_ok = False
+    if DB_PATH.exists():
+        try:
+            conn = sqlite3.connect(str(DB_PATH))
+            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            conn.close()
+            required = {"jobs", "metadata", "workflow_events", "agent_memory"}
+            if required.issubset(tables):
+                db_ok = True
+        except Exception:
+            db_ok = False
+
+    if _init_done and db_ok:
+        logger.info("[init_database] skipped (already initialised and verified, db=%s)", resolved)
         return
+        
     with _init_lock:
-        if _init_done:
-            logger.info("[init_database] skipped (already initialised, db=%s)", resolved)
+        # Re-check db_ok inside lock
+        db_ok = False
+        if DB_PATH.exists():
+            try:
+                conn = sqlite3.connect(str(DB_PATH))
+                tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+                conn.close()
+                required = {"jobs", "metadata", "workflow_events", "agent_memory"}
+                if required.issubset(tables):
+                    db_ok = True
+            except Exception:
+                db_ok = False
+                
+        if _init_done and db_ok:
+            logger.info("[init_database] skipped (already initialised and verified, db=%s)", resolved)
             return
+            
         logger.info(
             "[init_database] creating schema at %s (file_exists=%s)",
             resolved,
             DB_PATH.exists(),
         )
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         conn = _get_connection()
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS jobs (

@@ -140,7 +140,7 @@ export default function ProfilesPage() {
 
   if (isDemoMode) {
     return (
-      <div className="mx-auto max-w-xl px-6 py-12">
+      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:py-8">
         <DemoModeBanner />
       </div>
     );
@@ -149,16 +149,19 @@ export default function ProfilesPage() {
   return (
     <div className="flex h-full flex-col md:overflow-hidden">
       {/* Page header (fixed) */}
-      <header className="shrink-0 border-b px-6 py-5">
+      <header className="shrink-0 border-b bg-card/45 px-4 py-5 sm:px-6">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Profiles</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
+            <p className="text-xs font-medium uppercase tracking-[0.2em] text-primary">
+              Library
+            </p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight">Profiles</h1>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
               Reusable creative profiles you can apply to any video.
             </p>
           </div>
           {editor.dirty && (
-            <span className="shrink-0 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-600 dark:text-amber-500">
+            <span className="shrink-0 rounded-full border border-warning-border bg-warning-surface px-3 py-1 text-xs font-medium text-warning-foreground">
               ● Unsaved changes
             </span>
           )}
@@ -174,7 +177,7 @@ export default function ProfilesPage() {
       ) : (
         <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col md:min-h-0 md:grid md:grid-cols-[minmax(15rem,30%)_minmax(0,1fr)]">
           {/* Library list — independently scrollable */}
-          <aside className="flex flex-col md:min-h-0 md:border-r">
+          <aside className="flex flex-col bg-card/30 md:min-h-0 md:border-r">
             <div className="shrink-0 px-4 pt-4 md:px-5">
               <Button
                 variant="outline"
@@ -201,7 +204,7 @@ export default function ProfilesPage() {
 
           {/* Editor — fixed action bar, scrollable body */}
           <section className="flex flex-col md:min-h-0">
-            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-6 py-3">
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-card/35 px-4 py-3 sm:px-6">
               {editor.isBuiltin ? (
                 <Button
                   size="sm"
@@ -235,7 +238,7 @@ export default function ProfilesPage() {
                     variant="ghost"
                     disabled={editor.saving || editor.activeId === null}
                     onClick={() => void handleDelete()}
-                    className="ml-auto text-red-600 hover:text-red-700 dark:text-red-500"
+                    className="ml-auto text-danger-foreground hover:text-danger"
                     title="Delete this profile"
                   >
                     <Trash2 />
@@ -245,9 +248,9 @@ export default function ProfilesPage() {
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-6">
               {editor.loading ? (
-                <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed">
+                <div className="flex min-h-40 items-center justify-center rounded-xl border border-dashed bg-card/55">
                   <p className="text-sm text-muted-foreground">Loading profile…</p>
                 </div>
               ) : (
@@ -258,7 +261,7 @@ export default function ProfilesPage() {
                     disabled={editor.saving}
                   />
                   {editor.error !== null && (
-                    <p className="mt-4 text-sm text-red-500">{editor.error}</p>
+                    <p className="mt-4 text-sm text-danger-foreground">{editor.error}</p>
                   )}
                 </div>
               )}
@@ -291,11 +294,11 @@ function ProfileCard({
       onClick={onSelect}
       aria-current={active}
       className={cn(
-        "flex w-full flex-col gap-1.5 rounded-lg border px-3 py-2.5 text-left transition-colors",
+        "flex w-full flex-col gap-1.5 rounded-lg border px-3 py-2.5 text-left shadow-sm shadow-[var(--shadow-color)] transition-all duration-200",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         active
-          ? "border-primary bg-accent shadow-sm ring-1 ring-primary/20"
-          : "border-input hover:border-input hover:bg-accent/40",
+          ? "border-primary/45 bg-accent/70 ring-1 ring-primary/20"
+          : "border-input bg-background/45 hover:border-primary/30 hover:bg-accent/35",
       )}
     >
       <div className="flex items-start justify-between gap-2">

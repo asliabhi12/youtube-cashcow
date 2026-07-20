@@ -1,602 +1,562 @@
-# YouTube CashCow
+# CashCow
 
-A production-grade, modular video automation platform. YouTube CashCow takes a video from source to finished upload-ready output through a single configurable pipeline: downloading, FFmpeg processing, masked compositing, workflow automation, and hardware-accelerated encoding, all with built-in benchmarking.
+<p align="center">
+  <strong>Offline-first AI-powered YouTube Automation Platform</strong>
+</p>
 
-## 🚀 Project Overview
+<p align="center">
+  CashCow is an offline-first AI workflow platform that automates YouTube content production while keeping creators in control.
+  It downloads videos, processes media, extracts transcripts, generates AI-powered metadata with multiple LLM providers,
+  and uploads directly to YouTube through a resilient workflow backed by SQLite Agent Memory.
+</p>
 
-YouTube CashCow is built as a modular pipeline architecture where each subsystem is independent and composable. It combines a robust codebase foundation (typed configuration, Rich-backed logging, a Typer CLI, and environment validation) with a full media stack:
+<p align="center">
+  <a href="#features"><img alt="Platform" src="https://img.shields.io/badge/platform-local--first-111827?style=for-the-badge"></a>
+  <a href="#tech-stack"><img alt="Next.js" src="https://img.shields.io/badge/frontend-Next.js-000000?style=for-the-badge&logo=nextdotjs"></a>
+  <a href="#tech-stack"><img alt="FastAPI" src="https://img.shields.io/badge/backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white"></a>
+  <a href="#agent-memory"><img alt="SQLite" src="https://img.shields.io/badge/memory-SQLite-044A64?style=for-the-badge&logo=sqlite&logoColor=white"></a>
+  <a href="#license"><img alt="License" src="https://img.shields.io/badge/license-MIT-placeholder?style=for-the-badge"></a>
+  <a href="#"><img alt="Build" src="https://img.shields.io/badge/build-passing-placeholder?style=for-the-badge"></a>
+  <a href="#"><img alt="Version" src="https://img.shields.io/badge/version-0.1.0-blue?style=for-the-badge"></a>
+</p>
 
-- **Downloading** — concurrent video/audio retrieval with metadata, playlists, and cookie authentication via `yt-dlp`.
-- **Processing** — a local-media FFmpeg façade for trim, crop, resize, rotate, overlay, watermark, subtitles, thumbnails, concat, and audio operations.
-- **Compositing** — masked image/video overlays with feathering, scaling, rotation, and opacity.
-- **Media effects** — a chainable, FFmpeg-only audio-effects engine (pitch, deep voice, chipmunk, volume, echo, bass, treble, normalize, speed) and color-grading engine (brightness, contrast, saturation, gamma, hue, temperature, tint, vibrance), including selective grading of individual overlays.
-- **Workflow automation** — YAML-defined pipelines with isolated workspaces, retries, validation, and automatic cleanup.
-- **Hardware acceleration** — automatic encoder detection across Apple VideoToolbox, NVIDIA NVENC, and Intel Quick Sync, with a software fallback.
-- **Benchmarking** — encoder, transcode, quality, and end-to-end pipeline profiling with structured JSON reports.
+<p align="center">
+  <a href="#demo">Demo</a>
+  ·
+  <a href="#features">Features</a>
+  ·
+  <a href="#architecture">Architecture</a>
+  ·
+  <a href="#installation">Installation</a>
+  ·
+  <a href="#roadmap">Roadmap</a>
+</p>
 
-A modern web frontend, interactive editing tools, and YouTube upload automation are on the roadmap.
-
-## 🏗️ Architecture
-
-```mermaid
-graph TD
-    App[app.py Entrypoint] --> CLI[src/cli.py]
-
-    CLI --> Config[Configuration<br/>src/config.py]
-    CLI --> Logger[Logging<br/>src/logger.py]
-    CLI --> Validator[System Validator<br/>src/validator.py]
-    CLI --> Pipeline[Workflow Pipeline<br/>src/pipeline]
-    CLI --> Processor[Processing<br/>src/processor]
-    CLI --> Performance[Performance & Benchmarking<br/>src/performance]
-
-    Config --> Pydantic[Pydantic Models]
-    Config --> Yaml[settings.yaml]
-
-    Pipeline --> Downloader[Downloader<br/>yt-dlp]
-    Pipeline --> Processor
-
-    Processor --> Compositor[Compositor<br/>masks & overlays]
-    Processor --> Effects[Media Effects<br/>audio & color builders]
-    Processor --> Runner[FFmpegRunner<br/>src/processor/runner.py]
-    Compositor --> Runner
-    Effects --> Runner
-    Performance --> Runner
-
-    Runner --> FFmpeg[FFmpeg / FFprobe]
-```
-
-The system comprises the following key components:
-- **CLI Subsystem**: Driven by `Typer` and `Rich` for user interaction and diagnostic readouts.
-- **Configuration Subsystem**: Loads `settings.yaml` and executes rigid schema validation using `Pydantic`.
-- **System Validator**: Runs pre-flight diagnostics assessing Python runtime requirements, dependency existence, folder structure, and access permissions.
-- **Logging Subsystem**: Features colorized console logs (via Rich) alongside rotating, daily file loggers.
-- **Download Subsystem**: `yt-dlp`-backed video/audio retrieval with metadata extraction, playlist support, format selection, and cookie authentication.
-- **Processing Subsystem**: A local-media-only FFmpeg façade for composable trim, transforms, audio, subtitle, thumbnail, and concat operations.
-- **Compositing Subsystem**: Layers masked, feathered, scaled, and rotated image/video overlays onto the base video (`mask.py`, `overlay.py`, `compositor.py`).
-- **Media Effects Subsystem**: FFmpeg-only, registry-driven audio (`audio.py`) and color (`color.py`) builders that return filter fragments the Processor assembles; effects are chainable, fully typed, and identity operations are elided so no wasted filters are emitted.
-- **Workflow Pipeline**: Coordinates the downloader and processor from YAML definitions with isolated workspaces, retries, validation, and cleanup.
-- **Performance Engine**: Detects hardware encoders, selects the fastest backend with a software fallback, and benchmarks encoder, transcode, quality, and full-pipeline profiles.
-- **FFmpeg Runner**: The single point of FFmpeg/FFprobe execution — every subsystem routes its commands through `src/processor/runner.py`.
+> [!NOTE]
+> CashCow is built as a local two-process app: a FastAPI backend on `localhost:8000` and a Next.js dashboard on `localhost:3000`.
+> The hosted/demo UI can run without a backend, but real workflows require the local backend.
 
 ---
 
-## 📂 Folder Structure
+## Screenshots
+
+Add final screenshots under `docs/screenshots/` and replace these placeholders before publishing a release.
+
+| Landing Page | Dashboard | Workflow |
+| --- | --- | --- |
+| ![Landing Page placeholder](https://placehold.co/900x520/111827/d1d5db?text=CashCow+Landing+Page) | ![Dashboard placeholder](https://placehold.co/900x520/111827/d1d5db?text=CashCow+Dashboard) | ![Workflow placeholder](https://placehold.co/900x520/111827/d1d5db?text=Workflow+Console) |
+
+| Demo Mode | Dark Theme | Light Theme |
+| --- | --- | --- |
+| ![Demo Mode placeholder](https://placehold.co/900x520/f8fafc/334155?text=Demo+Mode) | ![Dark Theme placeholder](https://placehold.co/900x520/0f172a/e5e7eb?text=Dark+Theme) | ![Light Theme placeholder](https://placehold.co/900x520/f8fafc/111827?text=Light+Theme) |
+
+---
+
+## Demo
+
+| Resource | Link |
+| --- | --- |
+| Live Demo | `TODO: add deployed frontend URL` |
+| Demo Video | `TODO: add YouTube/Loom walkthrough` |
+| Screenshots | `TODO: add docs/screenshots/ assets` |
+
+> [!TIP]
+> Demo Mode is intentional: the frontend clearly explains when the dashboard is running without the local backend and disables real workflow actions instead of surfacing broken errors.
+
+---
+
+## Why CashCow?
+
+Creators often repeat the same production loop: find a source video, download it, cut it, resize it, apply a house style, write YouTube metadata, upload, and track what happened. That loop is slow, fragile, and usually split across multiple tools.
+
+CashCow turns that loop into a controlled local workflow:
+
+- **Less repetitive production work**: one job coordinates download, processing, metadata, and upload.
+- **More control**: creative profiles keep resize, audio, color, overlay, and export choices explicit.
+- **More resilience**: workflow events and Agent Memory record task progress so interrupted work can be detected and resumed.
+- **More privacy**: videos are processed locally; cloud services are used only when configured for AI metadata or YouTube publishing.
+
+### Why offline-first matters
+
+Offline-first does not mean "never connects to the internet." It means the creator's machine is the center of gravity. Media processing, workflow state, and UI control stay local; external APIs are optional workflow steps rather than the foundation of the product.
+
+### Why privacy matters
+
+Video production often involves unpublished ideas, source material, transcripts, and channel strategy. CashCow keeps core workflow data local and makes external handoffs explicit: OpenRouter/Gemini for metadata and YouTube for upload.
+
+---
+
+## Features
+
+| Feature | Status | What it does |
+| --- | --- | --- |
+| Offline-first | ✅ Implemented | Runs as a local FastAPI + Next.js app. Core media processing uses local workflow execution. |
+| AI Metadata | ✅ Implemented | Generates YouTube titles, descriptions, and tags from job context. |
+| OpenRouter Support | ✅ Implemented | Routes metadata generation through OpenRouter when `METADATA_PROVIDER=openrouter`. |
+| Multi-model fallback | ✅ Implemented | OpenRouter provider tries configured models from `settings.yaml` in order. |
+| SQLite Agent Memory | ✅ Implemented | Persists workflow events and task memory in `cashcow.db`. |
+| Workflow Engine | ✅ Implemented | Adapts jobs into the existing pipeline engine: download, optional creative steps, encode, export. |
+| Resume After Restart | ✅ Implemented | Startup reads unfinished Agent Memory records and marks unfinished jobs for recovery. |
+| Transcript Extraction | ✅ Implemented | Reads downloaded subtitle files and strips VTT/SRT formatting for metadata context. |
+| Language Detection | ✅ Implemented | Detects English, Hindi, and Hinglish with lightweight heuristics. |
+| YouTube Upload | ✅ Implemented | OAuth-backed resumable upload endpoint integration with retry for upload failures. |
+| Demo Mode | ✅ Implemented | Frontend detects backend availability and presents a polished no-backend state. |
+| Modern Dashboard | ✅ Implemented | Premium SaaS dashboard for workflow creation, profiles, jobs, logs, and settings. |
+| Dark/Light Theme | ✅ Implemented | Hydration-safe `next-themes` support for Light, Dark, and System themes. |
+| Responsive UI | ✅ Implemented | App shell, landing page, dashboard, jobs, and forms adapt across desktop and mobile. |
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TD
+    Frontend["Next.js Dashboard<br/>Landing · Dashboard · Jobs · Profiles · Settings"]
+    API["FastAPI Backend<br/>REST + SSE logs"]
+    Engine["Workflow Engine<br/>Download · Process · Encode · Export"]
+    SQLite["SQLite<br/>Agent Memory · Workflow Events · Metadata"]
+    AI["OpenRouter / Gemini<br/>AI Metadata Providers"]
+    YouTube["YouTube<br/>OAuth + Resumable Upload"]
+
+    Frontend --> API
+    API --> Engine
+    Engine --> SQLite
+    SQLite --> AI
+    AI --> YouTube
+```
+
+CashCow uses the existing media workflow engine under `src/` without rewriting it. The FastAPI backend adapts UI-created jobs into fixed workflow definitions, tracks progress, streams logs over Server-Sent Events, stores task memory in SQLite, and hands final metadata to YouTube upload when credentials are configured.
+
+---
+
+## Workflow
+
+```mermaid
+flowchart TD
+    A["Create Job"] --> B["Download"]
+    B --> C["Process Media"]
+    C --> D["Extract Transcript"]
+    D --> E["Language Detection"]
+    E --> F["AI Metadata"]
+    F --> G["Upload to YouTube"]
+    G --> H["Completed"]
+
+    B -. "record task" .-> M["SQLite Agent Memory"]
+    D -. "record transcript task" .-> M
+    F -. "record metadata task" .-> M
+    G -. "record upload task" .-> M
+    M -. "resume / reuse completed tasks" .-> B
+    M -. "resume / reuse completed tasks" .-> F
+    M -. "resume / reuse completed tasks" .-> G
+```
+
+The API queues jobs through a single-worker FIFO queue. Each job moves through a fixed workflow sequence, with optional creative steps emitted from the selected profile:
+
+1. Download source video with hardened `yt-dlp` options.
+2. Apply trim range when provided.
+3. Apply profile-driven resize, audio, color, and overlay steps when enabled.
+4. Encode and export the final MP4.
+5. Extract subtitles/transcript context when available.
+6. Generate metadata through Gemini, OpenRouter, or mock provider.
+7. Upload to YouTube if OAuth credentials are configured.
+8. Store workflow events and task memory in SQLite.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+| --- | --- |
+| Frontend | Next.js 15, React 19, TypeScript |
+| Backend | FastAPI, Uvicorn, Pydantic |
+| Database | SQLite with WAL mode |
+| AI | Gemini provider, OpenRouter provider, mock provider |
+| Workflow | Existing Python pipeline engine, `yt-dlp`, FFmpeg configuration |
+| Styling | Tailwind CSS 4, `next-themes`, Lucide Icons, Framer Motion |
+| Deployment | Local development scripts; deployment target is intentionally open |
+
+---
+
+## Project Structure
 
 ```text
 youtube-cashcow/
-├── app.py                   # Root application entry point
-├── requirements.txt         # Package dependencies
-├── settings.yaml            # Main application configuration file
-├── .env                     # Environment override variables (git ignored)
-├── .env.example             # Template for environment configuration
-├── .gitignore               # Ignored version control paths
-├── README.md                # Project documentation
-│
-├── src/                     # Core source package
-│   ├── __init__.py          # Exports config, loggers, exceptions, and validators
-│   ├── config.py            # Pydantic settings models and safe loading logic
-│   ├── logger.py            # Colored Console (Rich) and Rotating File logging
-│   ├── cli.py               # Typer command setup and layout definition
-│   ├── validator.py         # System dependency, directory, and version validation
-│   ├── constants.py         # Application metadata and extension configurations
-│   ├── exceptions.py        # Typed application exceptions
-│   └── utils.py             # Filesystem, timestamp, and permission utilities
-│
-├── assets/                  # Overlays, watermarks, intros, and masks
-│   ├── overlays/
-│   ├── logos/
-│   ├── masks/
-│   ├── intro/
-│   └── outro/
-│
-├── downloads/               # Directory for temporary downloaded video files
-├── temp/                    # Workspace directory for processing clips
-├── output/                  # Final output directory for processed videos
-├── logs/                    # Folder containing daily rotating log files
-└── tests/                   # Test suite for unit and system checks
+├── README.md                         # Project README
+├── app.py                            # Legacy/root CLI entry point for the media engine
+├── settings.yaml                     # Engine + metadata model configuration
+├── src/                              # Existing Python media workflow engine
+│   ├── downloader.py
+│   ├── pipeline/
+│   ├── processor/
+│   └── performance/
+├── tests/                            # Engine-level tests
+└── cashcow/                          # Current full-stack app
+    ├── package.json                  # Monorepo dev scripts
+    ├── backend/
+    │   ├── app/
+    │   │   ├── api/                  # FastAPI routes
+    │   │   ├── core/                 # Config and environment handling
+    │   │   ├── infrastructure/       # SQLite connection + repositories
+    │   │   ├── models/               # Pydantic models
+    │   │   └── services/             # Workflow, AI, queue, jobs, upload, profiles
+    │   ├── tests/                    # Backend tests
+    │   └── requirements.txt
+    ├── frontend/
+    │   ├── app/                      # Next.js App Router routes
+    │   ├── components/               # Layout, landing, UI, demo mode, theme
+    │   ├── features/                 # Workflow form, jobs logs, profile editor
+    │   ├── lib/                      # API client and config
+    │   └── package.json
+    ├── downloads/                    # Runtime downloads
+    ├── output/                       # Runtime exports
+    ├── presets/
+    └── workflows/
 ```
 
 ---
 
-## 🔧 Installation & Virtual Environment
+## Installation
 
-Follow these steps to set up the workspace:
+### Prerequisites
 
-### 1. Clone the repository and navigate inside
+- Node.js 20+
+- Python 3.12+
+- FFmpeg and FFprobe available on your `PATH`
+- A browser with YouTube cookies if using the default hardened downloader settings
+
+Install FFmpeg:
+
 ```bash
-git clone <repository_url> youtube-cashcow
+# macOS
+brew install ffmpeg
+
+# Ubuntu / Debian
+sudo apt install ffmpeg
+```
+
+### 1. Clone
+
+```bash
+git clone <repository-url> youtube-cashcow
 cd youtube-cashcow
 ```
 
-### 2. Create and Activate Virtual Environment
-Use Python 3.12+ to create a virtual environment:
+### 2. Install monorepo tooling
+
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
+cd cashcow
+npm install
 ```
 
-### 3. Install Package Dependencies
-Install the required packages using pip:
+### 3. Install backend dependencies
+
 ```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
+cd ..
 ```
 
-### 4. Create local environment settings
-Copy the environment file template to local configuration:
+### 4. Install frontend dependencies
+
 ```bash
-cp .env.example .env
+cd frontend
+npm install
+cd ..
 ```
 
-Automatic AI metadata generation uses Google Gemini. Set `GEMINI_API_KEY` in
-`.env` to enable it; optionally set `GEMINI_MODEL` to override the default model
-(`gemini-2.5-flash`). If `GEMINI_API_KEY` is missing, the app still starts and
-logs that AI metadata generation is disabled.
+### 5. Configure environment variables
+
+Create `cashcow/backend/.env`:
+
+```bash
+cp backend/.env.example backend/.env 2>/dev/null || touch backend/.env
+```
+
+Add provider credentials as needed. See [Environment Variables](#environment-variables).
+
+### 6. Run the app
+
+From `cashcow/`:
+
+```bash
+npm run dev
+```
+
+Services:
+
+| Service | URL |
+| --- | --- |
+| Frontend | `http://localhost:3000` |
+| Backend | `http://localhost:8000` |
+| Health Check | `http://localhost:8000/health` |
+
+Run processes individually:
+
+```bash
+npm run dev:backend
+npm run dev:frontend
+```
 
 ---
 
-## 💻 CLI Commands
+## Environment Variables
 
-Run the application using the following Typer commands:
+CashCow starts without secrets, but AI metadata and YouTube upload require provider credentials.
 
-### Running initialization
-Initializes folders, registers logging channels, checks requirements, and verifies write access:
-```bash
-python app.py run
+### AI metadata
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `METADATA_PROVIDER` | No | `gemini` | Selects `gemini`, `openrouter`, or `mock`. |
+| `GEMINI_API_KEY` | For Gemini | None | Google Gemini API key. |
+| `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model override. |
+| `OPENROUTER_API_KEY` | For OpenRouter | None | OpenRouter API key. |
+| `OPENROUTER_REFERER` | No | `http://localhost:8000` | Sent as OpenRouter `HTTP-Referer`. |
+| `OPENROUTER_APP_TITLE` | No | `YouTube CashCow` | Sent as OpenRouter `X-Title`. |
+
+Example:
+
+```env
+METADATA_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-or-v1-your-key
+OPENROUTER_REFERER=http://localhost:8000
+OPENROUTER_APP_TITLE=CashCow
 ```
 
-### Running diagnostics (doctor)
-Runs diagnostic checks against your settings file, imports, folders, permissions, and Python version:
-```bash
-python app.py doctor
-```
-
-### Inspecting active configuration
-Prints out a validated schema dump of the active settings:
-```bash
-python app.py config
-```
-
-### Viewing application version
-Prints version information:
-```bash
-python app.py version
-```
-
----
-
-## ⚙️ Configuration File (settings.yaml)
-
-Configuration is managed via `settings.yaml` and validated at runtime:
+OpenRouter model fallback is configured in `settings.yaml`:
 
 ```yaml
-app:
-  name: "YouTube CashCow"
-  version: "1.0.0"
-  debug: true
-
-logging:
-  level: "INFO"
-  console_output: true
-  file_output: true
-  log_dir: "logs"
-
-storage:
-  download_dir: "downloads"
-  temp_dir: "temp"
-  output_dir: "output"
-  assets_dir: "assets"
+metadata:
+  provider: openrouter
+  models:
+    - deepseek/deepseek-v4-flash:free
+    - tencent/hy3:free
+    - nvidia/nemotron-3-ultra:free
 ```
+
+### YouTube upload
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `YOUTUBE_CLIENT_ID` | For OAuth/upload | None | Google OAuth client ID. |
+| `YOUTUBE_CLIENT_SECRET` | For OAuth/upload | None | Google OAuth client secret. |
+| `YOUTUBE_REFRESH_TOKEN` | For upload | None | Stored automatically after OAuth callback when provided by Google. |
+| `YOUTUBE_REDIRECT_URI` | No | `http://localhost:8000/youtube/auth/callback` | OAuth redirect URI. |
+| `YOUTUBE_TOKEN_URI` | No | `https://oauth2.googleapis.com/token` | OAuth token endpoint. |
+| `YOUTUBE_RESUMABLE_UPLOAD_URL` | No | YouTube upload API URL | Resumable upload endpoint. |
+| `YOUTUBE_PRIVACY_STATUS` | No | `private` | Upload privacy status. |
+| `YOUTUBE_CATEGORY_ID` | No | `22` | YouTube category ID. |
+| `YOUTUBE_MADE_FOR_KIDS` | No | `false` | Sets `selfDeclaredMadeForKids`. |
+| `YOUTUBE_ACCOUNT_ID` | No | `default` | Local account identifier for the MVP upload account. |
+
+Example:
+
+```env
+YOUTUBE_CLIENT_ID=your-google-client-id
+YOUTUBE_CLIENT_SECRET=your-google-client-secret
+YOUTUBE_PRIVACY_STATUS=private
+YOUTUBE_CATEGORY_ID=22
+YOUTUBE_MADE_FOR_KIDS=false
+```
+
+Connect the account:
+
+```text
+GET http://localhost:8000/youtube/auth/start
+```
+
+### Downloader hardening
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `CASHCOW_DL_BROWSER` | No | `chrome` | Browser cookie store used by `yt-dlp`. |
+| `CASHCOW_DL_USE_BROWSER_COOKIES` | No | `true` | Enables browser cookies for YouTube downloads. |
+| `CASHCOW_DL_REMOTE_COMPONENTS` | No | `ejs:github` | Remote components passed to `yt-dlp`; empty disables them. |
 
 ---
 
-## 🎬 FFmpeg processing (Phase 3)
+## Demo Mode
 
-The processor is independent of downloading and only accepts local paths. Install both
-`ffmpeg` and `ffprobe` first:
+Demo Mode exists so the frontend can be shown without requiring a running backend, YouTube credentials, or local FFmpeg setup.
 
-- macOS: `brew install ffmpeg`
-- Ubuntu/Debian: `sudo apt install ffmpeg`
-- Windows: install a current FFmpeg build, then add its `bin` directory to `PATH`.
+When the dashboard cannot reach `http://localhost:8000/health`, it:
 
-Configure custom executable paths, command timeout, threads, or optional hardware
-acceleration in the `ffmpeg` block in `settings.yaml`.
+- shows a polished **Demo Mode** banner,
+- explains that the backend is offline,
+- disables real workflow submission,
+- keeps navigation, forms, profiles, themes, and layout previewable.
 
-```python
-from src.config import load_config
-from src.processor import Processor
-
-processor = Processor(load_config())
-clip = processor.trim("downloads/source.webm", "output/clip.mp4", start=4, end=18)
-vertical = processor.resize(clip.output_file, "output/short.mp4", preset="1080x1920", padding=True)
-processor.watermark(vertical.output_file, "output/branded.mp4", text="@mychannel")
-processor.thumbnail("output/branded.mp4", "output/thumbnail.jpg", timestamp=3)
-```
-
-Available operations include `trim`, `crop`, `resize`, `rotate`, `overlay`,
-`composite` (masked overlays, see Phase 6), `watermark`, `burn_subtitles`,
-`thumbnail`, `concat`, `extract_audio`, `replace_audio`, `mute`, `volume`, and
-`normalize`. Every successful operation returns
-a typed `ProcessingResult`; `inspect()` returns `VideoInfo`. Operations accept optional
-`progress` callbacks and cancellation events where applicable.
-
----
-
-## 🔁 Workflow pipelines (Phase 4)
-
-`src.pipeline` coordinates the downloader and the existing local-media `Processor`; it
-does not contain FFmpeg commands or downloading logic. Every run receives an isolated
-workspace, records typed step history, retries recoverable failures, and removes its
-intermediate files after success by default. Processing steps always call the Processor
-API rather than constructing commands themselves.
-
-```yaml
-name: shorts_pipeline
-retry:
-  attempts: 3
-steps:
-  - download:
-      url: https://youtube.com/watch?v=example
-  - trim:
-      start: 5
-      end: 45
-  - resize:
-      preset: 1080x1920
-      padding: true
-  - watermark:
-      text: "@mychannel"
-  - thumbnail:
-      second: 12
-  - export:
-      output: output/final.mp4
-```
-
-Validate or run it with:
+To enable real workflows:
 
 ```bash
-python app.py pipeline validate workflow.yaml
-python app.py pipeline run workflow.yaml
+cd cashcow
+npm run dev:backend
 ```
 
-Each `steps` item is a one-key YAML mapping. Built-in names are `download`, `source`,
-`trim`, `crop`, `resize`, `rotate`, `overlay`, `watermark`, `subtitles`, `thumbnail`,
-`concat`, `encode`, `audio_effect`, `color_effect`, and `export`. `download`, `source`,
-(or a file-based `concat`) must establish input media first; `export` is required and
-must be last. File-valued options such as overlay images and subtitle files are resolved
-relative to the workflow YAML file.
-
-For `resize`, dimension presets include `1080x1920`, `1920x1080`, `1080x1080`,
-`720p`, and `4k`. Pipeline-only platform aliases are also available: `youtube`
-maps to `1920x1080`; `shorts`, `tiktok`, and `instagram` map to `1080x1920`.
-
-To add a custom step, subclass `src.pipeline.steps.base.PipelineStep`, implement
-`validate()` and `execute(context, runner)`, then register it with
-`registry.register("name", YourStep)`. Steps should update `context.current_file` and
-use `runner.processor` for media transformations.
+The header status changes from backend offline to server running when the health check succeeds.
 
 ---
 
-## ⚡ Performance engine (Phase 5)
+## Agent Memory
 
-The performance layer detects FFmpeg encoders automatically and keeps all FFmpeg
-execution in `src/processor/runner.py`. On Apple Silicon it prefers
-`h264_videotoolbox` (or `hevc_videotoolbox` when requested), then uses NVIDIA NVENC,
-Intel Quick Sync, and finally software `libx264`/`libx265`/`libsvtav1`. Existing
-`Processor` methods do not change; their internal encoding options are selected at
-runtime and retain a software fallback when hardware is unavailable.
+CashCow uses SQLite as Agent Memory for workflow recovery and task reuse.
+
+Database file:
+
+```text
+cashcow.db
+```
+
+Tables created by the backend:
+
+| Table | Purpose |
+| --- | --- |
+| `jobs` | Persistent job identity records used by infrastructure repositories. |
+| `metadata` | Generated metadata storage shape. |
+| `workflow_events` | Stage transitions and completion events. |
+| `agent_memory` | Task-level memory for download, transcript extraction, metadata, and upload. |
+
+Agent Memory allows CashCow to:
+
+- record completed workflow tasks,
+- detect unfinished jobs on backend startup,
+- reuse completed metadata/upload tasks when a workflow resumes,
+- keep recovery logic separate from the UI.
+
+> [!IMPORTANT]
+> The current API job list is process-memory backed for live UI state, while Agent Memory persists workflow recovery records in SQLite. This keeps the MVP fast and simple while preserving the foundation for fully persistent job history.
+
+---
+
+## AI Metadata Pipeline
+
+CashCow's metadata pipeline turns workflow context into YouTube-ready copy:
+
+1. **Transcript extraction**  
+   Subtitle files downloaded by the workflow are parsed from VTT/SRT into plain text.
+
+2. **Language detection**  
+   Lightweight heuristics detect English, Hindi, or Hinglish using Devanagari and Latin character patterns.
+
+3. **Prompt generation**  
+   The final prompt combines transcript, duration, title seed, and creative-profile guidance.
+
+4. **Provider execution**  
+   `METADATA_PROVIDER` selects Gemini, OpenRouter, or mock provider.
+
+5. **OpenRouter fallback**  
+   The OpenRouter provider reads model order from `settings.yaml` and switches models on timeout, rate limit, server error, empty response, or repeated invalid JSON.
+
+6. **JSON validation**  
+   Provider output is validated against the expected metadata schema: `title`, `description`, and `tags`.
+
+7. **Fallback metadata**  
+   If provider generation fails, the workflow attempts deterministic fallback metadata so the job output remains useful.
+
+---
+
+## Design Philosophy
+
+### Offline-first
+
+The local machine owns the workflow. CashCow treats cloud services as explicit integrations, not as a prerequisite for editing or processing.
+
+### Privacy-first
+
+Source media, workflow state, and profile configuration stay local. AI and YouTube APIs receive only the data needed for their configured stage.
+
+### Deterministic workflows
+
+Users do not submit arbitrary pipeline graphs from the UI. The backend builds a fixed, known workflow and parameterizes it with validated profile settings.
+
+### Human control
+
+CashCow automates production steps, but creators still choose the source, trim, profile, quality, metadata seed, and upload configuration.
+
+---
+
+## Roadmap
+
+These items are future ideas and are not claimed as implemented.
+
+- [ ] Fully persistent job history in SQLite
+- [ ] Multi-account YouTube upload management
+- [ ] Metadata review/edit screen before upload
+- [ ] Batch job creation
+- [ ] Scheduled publishing
+- [ ] Cloud deployment recipe
+- [ ] Docker Compose development environment
+- [ ] Built-in screenshot/demo asset generation for documentation
+- [ ] OAuth status UI in settings
+- [ ] Richer language detection with confidence scores
+- [ ] Per-channel creative profile libraries
+- [ ] End-to-end Playwright test suite for the dashboard
+
+---
+
+## Contributing
+
+Contributions are welcome. CashCow is easiest to improve when changes are small, tested, and explicit about behavior.
+
+### Development workflow
+
+1. Fork the repository.
+2. Create a feature branch.
+3. Install backend and frontend dependencies.
+4. Run the relevant tests and checks.
+5. Open a pull request with screenshots for UI changes.
+
+### Useful commands
 
 ```bash
-python app.py hardware
-python app.py performance
-python app.py benchmark input.mp4
-python app.py benchmark input.mp4 --profile encoder --duration 30
-python app.py benchmark input.mp4 --profile transcode
-python app.py benchmark input.mp4 --profile quality --json benchmark.json
-python app.py benchmark input.mp4 --profile pipeline --json pipeline.json
-python app.py benchmark workflow.yaml --profile pipeline
+# Frontend
+cd cashcow/frontend
+npm run lint
+npm run build
+
+# Backend tests
+cd cashcow/backend
+pytest
+
+# Full local app
+cd cashcow
+npm run dev
 ```
 
-`hardware` lists compiled FFmpeg encoders. `benchmark` first inspects the input
-(codec, resolution, duration, fps, bitrate), detects the decode path — for example
-`Software (libdav1d)` for AV1 or `Hardware (<method>)` when `ffmpeg.hwaccel` is
-configured — and the encode backend, then prints an Input and a Benchmark panel
-before running.
+### Pull request expectations
 
-Profiles control scope:
-
-- **`encoder`** (default) benchmarks a short clip (30s) so encoder throughput is
-  isolated from software decode cost. This is the fix for AV1/HEVC inputs where
-  software decode would otherwise dominate the measured time.
-- **`transcode`** benchmarks the full file and measures the complete decode +
-  encode pipeline.
-- **`quality`** encodes several presets on the fastest available backend and
-  compares output size, elapsed time, and fps.
-- **`pipeline`** runs a complete production workflow end-to-end and answers "how
-  long would a real workflow take?" (see below).
-
-`--duration N` limits every encoder to the same `N`-second clip via FFmpeg's `-t`
-option (clamped to the source length). The structured report shows encoder, decoder,
-preset, elapsed, average fps, speed (x realtime), output size, CPU share, memory
-high-water mark, resolution, and input codec. `--json <file>` writes the full report
-as machine-readable JSON for regression testing. Benchmark outputs are temporary;
-the typed report retains their measured sizes.
-
-#### Pipeline profile
-
-The `pipeline` profile measures a real production workflow rather than a synthetic
-FFmpeg command. It runs the actual `PipelineRunner`, so every step executes exactly
-as in production and all FFmpeg work stays inside `src/processor/runner.py` — the
-benchmark orchestrates existing components and never duplicates processing logic.
-
-```bash
-# Media file: a synthetic source -> trim -> resize -> encode -> export workflow
-python app.py benchmark input.mp4 --profile pipeline --duration 5
-
-# Workflow YAML: your own workflow is reused verbatim
-python app.py benchmark workflow.yaml --profile pipeline --json pipeline.json
-```
-
-Timing is captured by observing the runner's own progress events, not by
-re-implementing timers. Wall clock is split into `init`, `download` (when a
-`download` step is present), `processing`, `encoding`, `export`, and `cleanup`
-buckets, and each executed step reports its start, duration, and status:
-
-```
-Pipeline Benchmark            Step Breakdown
-Pipeline:    benchmark_pipeline    Step     Start    Duration   Status
-Hardware:    videotoolbox          source   0.00 s   0.00 s     completed
-Encoder:     h264_videotoolbox     trim     0.00 s   0.53 s     completed
-Decoder:     Software (h264)       resize   0.53 s   0.49 s     completed
-Resolution:  1920x1080             encode   1.02 s   0.55 s     completed
-Total Time:  1.58 s                export   1.57 s   0.00 s     completed
-Encoding:    0.55 s
-```
-
-`--json <file>` writes the full pipeline report (profile, pipeline name, hardware,
-encoder, decoder, per-bucket timings, and the complete `steps` array with per-step
-timing and status). Serialization stays in the CLI layer.
-
-**Interpreting the result.** `encoding` is the time spent in the encode step alone;
-`processing` covers trim/resize/overlay/watermark/subtitle work; a large gap between
-`total` and the sum of encode + processing points at I/O (download, export) or
-initialization overhead. **Recommended usage:** benchmark the same workflow YAML you
-run in production, keep `--duration` small (a few seconds) for fast iteration, and
-compare the JSON `encoding_time` and `total_time` across encoder or hardware changes.
-
-A media-file input requires no workflow authoring — the benchmark builds an in-memory
-workflow from the existing Pipeline models. Local files can also be fed to any
-workflow through the new `source` step (`source: {path: clip.mp4}`), the offline
-counterpart to `download`.
-
-Tune the behavior in `settings.yaml`:
-
-```yaml
-performance:
-  hardware: "auto"        # auto, videotoolbox, nvenc, qsv, software
-  workers: "auto"         # CPU-aware pool: available CPUs minus one
-  benchmark: true
-  metrics: true
-  preferred_encoder: "auto"
-  fallback: "software"
-```
-
-Production encoding presets are available as `src.performance.Preset`: `YOUTUBE_1080`,
-`YOUTUBE_4K`, `SHORTS`, `TIKTOK`, `INSTAGRAM`, `ARCHIVE`, and `LOSSLESS`. They carry
-bitrate, audio bitrate, pixel format, GOP, fast-start, threading, and hardware
-preference defaults. Apple VideoToolbox decisions use hardware bitrate/quality options
-and `+faststart`, avoiding CPU encoding whenever the installed FFmpeg exposes it.
+- Keep routing and business logic changes explicit.
+- Add or update tests for backend behavior.
+- Include screenshots or screen recordings for UI changes.
+- Document any new environment variables.
+- Do not commit runtime downloads, exports, local databases, or secrets.
 
 ---
 
-## 🎭 Masking & compositing (Phase 6)
+## License
 
-The compositing engine lays a masked image or video overlay onto the base video,
-the way CapCut, Premiere, and DaVinci masks work. It slots into the existing
-chain — `Pipeline → Processor → Compositor → FFmpegRunner` — so every command
-still executes only inside `src/processor/runner.py`. Three concerns stay
-isolated: `mask.py` generates alpha shapes, `overlay.py` resolves
-position/scale/rotation, and `compositor.py` assembles the filter graph.
-
-The base video is always fully visible outside the mask; only the overlay is
-scaled, masked, feathered, rotated, and faded.
-
-Add an `overlay` step with a `source` (image or video):
-
-```yaml
-name: masked_overlay
-steps:
-  - source:
-      path: input.mp4
-  - overlay:
-      source: assets/overlays/face.mp4
-      position:
-        x: center
-        y: center
-      scale: 0.4
-      opacity: 1.0
-      rotation: 0
-      mask:
-        type: circle
-        feather: 40
-  - export:
-      output: output/final.mp4
-```
-
-**Mask configuration.** `type` selects the shape (`circle` and `ellipse` today;
-the registry in `mask.py` accepts `rectangle`, `polygon`, and `alpha` later
-without touching callers). `feather` is the soft-edge radius in pixels, `width`
-and `height` size the shape (defaults fill the overlay), `rotation` turns it,
-and `invert` keeps the outside instead of the inside.
-
-**Overlay configuration.** `position` accepts named anchors (`center`,
-`top_left`, `top_right`, `bottom_left`, `bottom_right`, `top`, `bottom`, `left`,
-`right`) or pixel coordinates. Scaling is either `scale` or explicit
-`width`/`height` in pixels — not both. A fractional `scale` sizes the overlay
-relative to the output frame (cover/fill), not to the overlay's own dimensions:
-`scale: 1.0` fully covers the frame with no black borders, `scale: 0.5` covers
-half the frame, and `scale: 2.0` is twice the frame. Aspect ratio is preserved
-and any excess is cropped. Explicit `width`/`height` remain fixed pixel sizes.
-`opacity` is an alpha multiplier applied after the mask, and `rotation` turns the
-overlay. Image and video overlays use the same configuration; a still image is
-held for the base's full duration automatically.
-
-The programmatic API mirrors the other operations:
-
-```python
-from src.processor import Processor, OverlayConfig, MaskConfig
-
-processor = Processor(load_config())
-processor.composite("input.mp4", "output/final.mp4", OverlayConfig(
-    source="assets/overlays/face.mp4", x="center", y="center", scale=0.4,
-    mask=MaskConfig(type="circle", feather=40),
-))
-```
-
-The legacy image-only `overlay` step (an `image:` key) is unchanged and still
-works.
-
-**Performance notes.** Masking uses FFmpeg's `geq` filter to draw the alpha
-shape, which is evaluated per pixel and is more expensive than a plain overlay;
-feathering is folded into the same pass rather than adding a second encode.
-Overlay time appears as its own line in the pipeline benchmark's step breakdown
-(alongside `encode` and `export`) with no benchmark changes. Do **not** wrap
-image overlays in `-loop`/`-shortest`: the `overlay` filter already repeats the
-last overlay frame for the base's duration, and an unbounded looped image stream
-will hang the encode.
+MIT License placeholder. Add the final `LICENSE` file before publishing a public release.
 
 ---
 
-## 🎚️ Media effects engine (Phase 7)
+## Acknowledgements
 
-The media effects engine adds FFmpeg-only audio processing and color grading. It
-keeps the existing chain — `Pipeline → Processor → Audio/Color builders →
-FFmpegRunner` — so every command still executes only inside
-`src/processor/runner.py`. There are **no AI models**; every effect is a plain
-FFmpeg filter. Two concerns stay isolated: `audio.py` builds `-af` fragments and
-`color.py` builds `-vf` fragments, both through small registries the Processor
-assembles. Builders only produce strings; nothing there runs a command.
+CashCow builds on excellent open-source and platform tools:
 
-### Audio effects
-
-Add an `audio_effect` step with either a single inline effect or an `effects`
-chain. Effects apply left to right.
-
-```yaml
-steps:
-  - source:
-      path: input.mp4
-
-  # single effect
-  - audio_effect:
-      type: pitch
-      semitones: 2
-
-  # chained effects
-  - audio_effect:
-      effects:
-        - type: normalize
-        - type: bass
-        - type: volume
-          gain: 4
-
-  - export:
-      output: output/final.mp4
-```
-
-Supported types and their knobs:
-
-| Type | Knob | FFmpeg filter |
-| --- | --- | --- |
-| `pitch` | `semitones` (-24..24) | `asetrate`+`aresample`+`atempo` (duration preserved) |
-| `deep_voice` | *(none; preset pitch)* | pitch shift down |
-| `chipmunk` | *(none; preset pitch)* | pitch shift up |
-| `volume` | `gain` dB (-60..60) | `volume` |
-| `echo` | `delay` ms, `decay` (0..1) | `aecho` |
-| `bass` | `gain` dB (-60..60) | `bass` |
-| `treble` | `gain` dB (-60..60) | `treble` |
-| `normalize` | *(none)* | `loudnorm` |
-| `speed` | `factor` (0.5..100) | `atempo` chain |
-
-`speed` decomposes any factor into a product of in-range `atempo` stages (each
-0.5–2.0), so large speed changes stay valid.
-
-### Color effects
-
-Add a `color_effect` step. Every knob defaults to its identity value, so only the
-knobs you set are emitted.
-
-```yaml
-steps:
-  - source:
-      path: input.mp4
-  - color_effect:
-      brightness: 0.05
-      contrast: 1.2
-      saturation: 1.3
-  - export:
-      output: output/final.mp4
-```
-
-| Knob | Range | FFmpeg filter |
-| --- | --- | --- |
-| `brightness` | -1..1 | `eq` |
-| `contrast` | 0..3 | `eq` |
-| `saturation` | 0..3 | `eq` |
-| `gamma` | 0..10 | `eq` |
-| `hue` | -360..360 | `hue` |
-| `temperature` | -1..1 (warm/cool) | `colorbalance` |
-| `tint` | -1..1 (green/magenta) | `colorbalance` |
-| `vibrance` | -2..2 | `vibrance` |
-
-`brightness`/`contrast`/`saturation`/`gamma` collapse into a single `eq` node.
-
-### Selective color grading (overlays)
-
-An `overlay` step accepts an optional `color` block. The grade is applied to the
-overlay's own pixels **before** compositing, so only the overlay is recoloured
-and the base video is untouched.
-
-```yaml
-  - overlay:
-      source: assets/overlays/logo.png
-      scale: 0.4
-      color:
-        brightness: 0.1
-        saturation: 1.4
-        hue: 20
-```
-
-### Programmatic API
-
-```python
-from src.processor import Processor, AudioEffectConfig, ColorEffectConfig
-
-processor = Processor(load_config())
-processor.apply_audio_effect("in.mp4", "out.mp4", {"effects": [{"type": "normalize"}, {"type": "bass"}]})
-processor.apply_color_effect("in.mp4", "graded.mp4", {"saturation": 1.3, "hue": 15})
-```
-
-**Performance notes.** Identity operations are elided: a `volume` of 0 dB, a
-`speed` of 1.0, a `pitch` of 0 semitones, and any color knob left at its neutral
-value contribute no filter. An all-identity chain produces an empty filter graph,
-and the pipeline step skips FFmpeg entirely rather than emitting a pointless
-re-encode. The pipeline benchmark reports dedicated `audio` and `color` timing
-buckets plus a `filter_graph_time` (the pure-Python cost of turning effect
-configs into filter strings, isolated from the encode cost); all three appear in
-the `--json` report.
+- [Next.js](https://nextjs.org/)
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [SQLite](https://www.sqlite.org/)
+- [OpenRouter](https://openrouter.ai/)
+- [Tailwind CSS](https://tailwindcss.com/)
+- [Lucide Icons](https://lucide.dev/)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- [FFmpeg](https://ffmpeg.org/)
 
 ---
 
-## 🗺️ Future Roadmap
-
-- **Modern Web Frontend** — a browser-based UI for building and running workflows.
-- **Interactive Timeline Editor** — visual, frame-accurate editing on a timeline.
-- **Drag-and-drop trimming** — direct manipulation of clip boundaries.
-- **Visual Workflow Builder** — compose pipeline steps without writing YAML.
-- **Audio Enhancement Engine** — noise reduction, leveling, and mastering.
-- **AI Scene Detection** — automatic shot and scene segmentation.
-- **Auto Caption Generation** — speech-to-text captions and subtitle export.
-- **Batch Processing** — run workflows across many inputs in parallel.
-- **YouTube Upload Automation** — authenticated uploads via the YouTube Data API.
-- **Job Scheduling** — queue and schedule recurring workflow runs.
-- **Plugin System** — third-party steps and integrations through a stable extension API.
+<p align="center">
+  <strong>Built with ❤️ for creators who value privacy, automation, and control.</strong>
+</p>

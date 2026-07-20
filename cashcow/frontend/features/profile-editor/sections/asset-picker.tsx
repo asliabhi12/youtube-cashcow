@@ -171,7 +171,7 @@ export function AssetPicker({ value, onChange, disabled = false }: AssetPickerPr
       />
 
       {busy && <p className="text-xs text-muted-foreground">Working…</p>}
-      {error !== null && <p className={cn("text-xs text-red-500")}>{error}</p>}
+      {error !== null && <p className={cn("text-xs text-danger-foreground")}>{error}</p>}
     </div>
   );
 }

@@ -86,7 +86,7 @@ export function SliderControl({
           onClick={() => onChange(clamp(defaultValue))}
           disabled={disabled || isDefault}
           title={`Reset to ${tidy(defaultValue)}`}
-          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
         >
           <RotateCcw className="size-3" />
           Reset
@@ -124,7 +124,7 @@ export function SliderControl({
               }
             }}
             onBlur={(e) => commitText(e.target.value)}
-            className="h-8 w-20 rounded-md border border-input bg-background px-2 py-1 text-right text-sm tabular-nums shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-8 w-20 rounded-md border border-input bg-background/70 px-2 py-1 text-right text-sm tabular-nums shadow-sm shadow-[var(--shadow-color)] transition-all duration-200 hover:border-primary/35 focus-visible:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
           />
           {unit !== undefined && (
             <span className="w-6 shrink-0 text-xs text-muted-foreground">{unit}</span>

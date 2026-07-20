@@ -1,69 +1,58 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { CheckCircle2 } from "lucide-react";
+import { Bot, Clapperboard, Download, FileText, Scissors, UploadCloud } from "lucide-react";
 
 const STEPS = [
-  "Video URL",
-  "Download",
-  "Processing",
-  "Transcript",
-  "Metadata",
-  "Upload",
-  "Completed",
+  { icon: Clapperboard, title: "Capture source", description: "Paste a YouTube URL and fetch video details." },
+  { icon: Download, title: "Download locally", description: "Pull media into the local processing workspace." },
+  { icon: Scissors, title: "Process clip", description: "Trim, resize, grade, overlay, and encode." },
+  { icon: Bot, title: "Generate metadata", description: "Create AI title, description, and tags." },
+  { icon: FileText, title: "Review output", description: "Inspect logs, progress, metadata, and files." },
+  { icon: UploadCloud, title: "Publish", description: "Download the result or upload to YouTube." },
 ];
 
 export function WorkflowSection() {
   return (
-    <section id="workflow" className="relative py-24">
-      <div className="mx-auto max-w-3xl px-6">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.6 }}
-          className="text-center"
-        >
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            <span className="bg-gradient-to-r from-purple-300 to-blue-300 bg-clip-text text-transparent">
-              How It Works
-            </span>
-          </h2>
-          <p className="mt-3 text-sm text-muted-foreground">
-            A simple, reliable pipeline from URL to YouTube.
-          </p>
-        </motion.div>
+    <section id="workflow" className="border-b py-24">
+      <div className="mx-auto max-w-7xl px-6">
+        <div className="grid gap-10 lg:grid-cols-[22rem_minmax(0,1fr)]">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.2em] text-primary">
+              Workflow
+            </p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+              One visible run from source to publishing.
+            </h2>
+            <p className="mt-4 text-base leading-7 text-muted-foreground">
+              The interface shows where every job is, what is running now, and what needs attention.
+            </p>
+          </div>
 
-        <div className="mt-12 space-y-0">
-          {STEPS.map((step, i) => (
-            <div key={step} className="flex items-start gap-4">
-              <div className="flex flex-col items-center">
+          <div className="rounded-xl border bg-card/75 p-4 shadow-xl shadow-[var(--shadow-color)]">
+            <div className="grid gap-3 md:grid-cols-2">
+              {STEPS.map((step, index) => (
                 <motion.div
-                  initial={{ scale: 0 }}
-                  whileInView={{ scale: 1 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: i * 0.1, type: "spring", stiffness: 200 }}
-                  className="flex size-8 items-center justify-center rounded-full border border-purple-500/30 bg-purple-500/10"
+                  key={step.title}
+                  initial={{ opacity: 0, y: 14 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-60px" }}
+                  transition={{ duration: 0.35, delay: index * 0.04 }}
+                  className="rounded-lg border bg-background/45 p-4"
                 >
-                  <CheckCircle2 size={16} className="text-purple-400" />
+                  <div className="flex items-start gap-3">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
+                      <step.icon className="size-4" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold">{step.title}</p>
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">{step.description}</p>
+                    </div>
+                  </div>
                 </motion.div>
-                {i < STEPS.length - 1 && (
-                  <div className="mt-1 h-10 w-px bg-gradient-to-b from-purple-500/30 to-transparent" />
-                )}
-              </div>
-              <motion.div
-                initial={{ opacity: 0, x: -10 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1, duration: 0.4 }}
-                className="flex h-8 items-center"
-              >
-                <span className="text-sm font-medium text-foreground">
-                  {step}
-                </span>
-              </motion.div>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
       </div>
     </section>

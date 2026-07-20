@@ -1,36 +1,32 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Activity, CheckCircle2, Server, Cpu } from "lucide-react";
+import { Activity, CheckCircle2, Cpu, Server } from "lucide-react";
 
 const STATS = [
-  { icon: Activity, value: "10+", label: "Workflow Steps" },
-  { icon: CheckCircle2, value: "138", label: "Passing Tests" },
-  { icon: Server, value: "100%", label: "Offline-First" },
-  { icon: Cpu, value: "Multi", label: "Model AI Support" },
+  { icon: Activity, value: "10+", label: "Pipeline steps" },
+  { icon: CheckCircle2, value: "138", label: "Backend tests" },
+  { icon: Server, value: "Local", label: "Processing mode" },
+  { icon: Cpu, value: "Multi", label: "AI provider routing" },
 ];
 
 export function Stats() {
   return (
-    <section className="relative py-16">
-      <div className="mx-auto max-w-5xl px-6">
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-          {STATS.map((s, i) => (
+    <section className="border-b py-14">
+      <div className="mx-auto max-w-7xl px-6">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {STATS.map((stat, index) => (
             <motion.div
-              key={s.label}
-              initial={{ opacity: 0, y: 20 }}
+              key={stat.label}
+              initial={{ opacity: 0, y: 14 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: i * 0.1 }}
-              className="flex flex-col items-center rounded-xl border border-white/5 bg-white/[0.02] p-6 backdrop-blur-sm"
+              transition={{ duration: 0.35, delay: index * 0.04 }}
+              className="rounded-xl border bg-card/70 p-5 shadow-sm shadow-[var(--shadow-color)]"
             >
-              <s.icon size={20} className="text-purple-400" />
-              <span className="mt-3 text-2xl font-bold text-foreground">
-                {s.value}
-              </span>
-              <span className="mt-1 text-xs text-muted-foreground">
-                {s.label}
-              </span>
+              <stat.icon className="size-4 text-primary" />
+              <p className="mt-4 text-2xl font-semibold tracking-tight">{stat.value}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{stat.label}</p>
             </motion.div>
           ))}
         </div>

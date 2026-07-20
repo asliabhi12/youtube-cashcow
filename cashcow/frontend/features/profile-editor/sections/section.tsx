@@ -51,8 +51,8 @@ export function EditorSection({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-lg border transition-colors",
-        hasToggle && enabled ? "border-input" : "border-input",
+        "overflow-hidden rounded-lg border bg-card/55 shadow-sm shadow-[var(--shadow-color)] transition-all duration-200",
+        hasToggle && enabled ? "border-primary/25" : "border-input",
         className,
       )}
     >
@@ -63,14 +63,14 @@ export function EditorSection({
             checked={enabled}
             aria-label={`Enable ${title}`}
             onChange={(e) => onToggleEnabled?.(e.target.checked)}
-            className="size-4 shrink-0 accent-primary"
+            className="size-4 shrink-0 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         )}
         <button
           type="button"
           onClick={onToggleOpen}
           aria-expanded={open}
-          className="flex flex-1 cursor-pointer items-center gap-3 text-left"
+          className="flex flex-1 cursor-pointer items-center gap-3 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronRight
             className={cn(
@@ -79,7 +79,7 @@ export function EditorSection({
             )}
           />
           <span className="flex min-w-0 flex-1 flex-col">
-            <span className="text-sm font-medium leading-tight">{title}</span>
+            <span className="text-sm font-medium leading-tight text-foreground/95">{title}</span>
             {statusText !== undefined && statusText !== "" && (
               <span
                 className={cn(
@@ -92,7 +92,7 @@ export function EditorSection({
             )}
           </span>
           {hasToggle && enabled && (
-            <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium leading-none text-primary">
+            <span className="shrink-0 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-medium leading-none text-primary">
               Enabled
             </span>
           )}
@@ -101,7 +101,7 @@ export function EditorSection({
       {open && (
         <div
           className={cn(
-            "flex flex-col gap-4 border-t border-input px-4 py-4",
+            "flex flex-col gap-4 border-t border-input bg-background/30 px-4 py-4",
             bodyDisabled && "pointer-events-none opacity-50",
           )}
           aria-disabled={bodyDisabled}

@@ -44,7 +44,7 @@ export function ProfileSelector({
         value={value}
         disabled={disabled || options.length === 0}
         onChange={(event) => onChange(event.target.value)}
-        className="h-11 w-full rounded-md border border-input bg-background px-4 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
+        className="h-11 w-full rounded-md border border-input bg-background/70 px-4 py-2 text-sm shadow-sm shadow-[var(--shadow-color)] transition-all duration-200 hover:border-primary/35 focus-visible:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
       >
         <optgroup label="Built-in">
           {builtins.map((option) => (
@@ -64,7 +64,7 @@ export function ProfileSelector({
         )}
       </select>
       {active !== undefined && active.description !== "" && (
-        <p className="text-xs text-muted-foreground">{active.description}</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">{active.description}</p>
       )}
     </div>
   );

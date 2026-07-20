@@ -2,56 +2,52 @@
 
 import { motion } from "framer-motion";
 
-const TECHS = [
-  "Python",
-  "FastAPI",
-  "Next.js",
-  "TailwindCSS",
-  "SQLite",
-  "OpenRouter",
-  "Gemini",
-  "FFmpeg",
-  "yt-dlp",
-  "YouTube API",
+const GROUPS = [
+  { title: "Frontend", tech: ["Next.js", "React", "Tailwind CSS"] },
+  { title: "Backend", tech: ["Python", "FastAPI", "SQLite"] },
+  { title: "Media", tech: ["FFmpeg", "yt-dlp", "YouTube API"] },
+  { title: "AI", tech: ["OpenRouter", "Gemini", "Fallback routing"] },
 ];
 
 export function TechStack() {
   return (
-    <section id="tech" className="relative py-24">
-      <div className="mx-auto max-w-5xl px-6">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.6 }}
-          className="text-center"
-        >
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            <span className="bg-gradient-to-r from-purple-300 to-blue-300 bg-clip-text text-transparent">
+    <section id="tech" className="border-b py-24">
+      <div className="mx-auto max-w-7xl px-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.2em] text-primary">
               Technology
-            </span>
-          </h2>
-          <p className="mt-3 text-sm text-muted-foreground">
-            Built with modern, battle-tested tools.
+            </p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+              Practical tools, cleanly organized.
+            </h2>
+          </div>
+          <p className="max-w-xl text-sm leading-6 text-muted-foreground">
+            The stack stays familiar and maintainable, with no extra UI dependencies added for the redesign.
           </p>
-        </motion.div>
+        </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.6, delay: 0.15 }}
-          className="mt-10 flex flex-wrap justify-center gap-3"
-        >
-          {TECHS.map((tech) => (
-            <span
-              key={tech}
-              className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-medium text-muted-foreground backdrop-blur-sm transition-all hover:border-purple-500/30 hover:text-purple-300"
+        <div className="mt-10 grid gap-4 md:grid-cols-4">
+          {GROUPS.map((group, index) => (
+            <motion.div
+              key={group.title}
+              initial={{ opacity: 0, y: 14 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.35, delay: index * 0.04 }}
+              className="rounded-xl border bg-card/70 p-5 shadow-sm shadow-[var(--shadow-color)]"
             >
-              {tech}
-            </span>
+              <h3 className="text-sm font-semibold">{group.title}</h3>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {group.tech.map((tech) => (
+                  <span key={tech} className="rounded-md border bg-background/50 px-2.5 py-1 text-xs text-muted-foreground">
+                    {tech}
+                  </span>
+                ))}
+              </div>
+            </motion.div>
           ))}
-        </motion.div>
+        </div>
       </div>
     </section>
   );

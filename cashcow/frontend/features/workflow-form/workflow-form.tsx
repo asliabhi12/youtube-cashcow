@@ -40,10 +40,10 @@ export function WorkflowForm({ isDemoMode = false }: { isDemoMode?: boolean }) {
   }, [editor.dirty, editor.saving, form]);
 
   return (
-    <div className="flex w-full flex-col gap-8">
+    <div className="flex w-full flex-col gap-7">
       {/* URL */}
-      <div className="flex flex-col gap-2">
-        <label htmlFor="youtube-url" className="text-sm font-medium">
+      <div className="flex flex-col gap-2 rounded-lg border bg-background/35 p-4">
+        <label htmlFor="youtube-url" className="text-sm font-medium text-foreground/90">
           YouTube URL
         </label>
         <Input
@@ -63,8 +63,8 @@ export function WorkflowForm({ isDemoMode = false }: { isDemoMode?: boolean }) {
       </div>
 
       {/* Title seed */}
-      <div className="flex flex-col gap-2">
-        <label htmlFor="title-seed" className="text-sm font-medium">
+      <div className="flex flex-col gap-2 rounded-lg border bg-background/35 p-4">
+        <label htmlFor="title-seed" className="text-sm font-medium text-foreground/90">
           Title Seed
         </label>
         <Input
@@ -80,9 +80,9 @@ export function WorkflowForm({ isDemoMode = false }: { isDemoMode?: boolean }) {
       </div>
 
       {/* Trim */}
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 rounded-lg border bg-background/35 p-4">
         <div className="flex items-baseline justify-between">
-          <span className="text-sm font-medium">Trim Range</span>
+          <span className="text-sm font-medium text-foreground/90">Trim Range</span>
           <span className="text-xs text-muted-foreground">
             Duration {formatDuration(form.trim.end - form.trim.start)}
           </span>
@@ -97,7 +97,7 @@ export function WorkflowForm({ isDemoMode = false }: { isDemoMode?: boolean }) {
       </div>
 
       {/* Creative profile: selector, actions, and the full editor */}
-      <div className="flex flex-col gap-3">
+      <div className="rounded-lg border bg-background/35 p-4">
         <div className="flex items-center justify-between gap-2">
           <ProfileSelector
             options={form.profiles}
@@ -107,7 +107,7 @@ export function WorkflowForm({ isDemoMode = false }: { isDemoMode?: boolean }) {
             className="flex-1"
           />
         </div>
-        <div className="flex items-center justify-between gap-2">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-b pb-4">
           <ProfileActions
             isBuiltin={editor.isBuiltin}
             canDelete={!editor.isBuiltin && editor.activeId !== null}
@@ -118,20 +118,22 @@ export function WorkflowForm({ isDemoMode = false }: { isDemoMode?: boolean }) {
             onDelete={() => void form.removeProfile()}
           />
           {editor.dirty && (
-            <span className="text-xs text-amber-600 dark:text-amber-500">
+            <span className="rounded-full border border-warning-border bg-warning-surface px-2.5 py-1 text-xs font-medium text-warning-foreground">
               ● Unsaved changes
             </span>
           )}
         </div>
 
-        <ProfileEditor
-          editor={editor}
-          qualities={form.qualities}
-          disabled={form.submitting}
-        />
+        <div className="mt-4">
+          <ProfileEditor
+            editor={editor}
+            qualities={form.qualities}
+            disabled={form.submitting}
+          />
+        </div>
 
         {editor.error !== null && (
-          <p className="text-sm text-red-500">{editor.error}</p>
+          <p className="text-sm text-danger-foreground">{editor.error}</p>
         )}
       </div>
 
@@ -143,9 +145,9 @@ export function WorkflowForm({ isDemoMode = false }: { isDemoMode?: boolean }) {
         disabled={form.submitting}
       />
 
-      {form.error !== null && <p className="text-sm text-red-500">{form.error}</p>}
+      {form.error !== null && <p className="text-sm text-danger-foreground">{form.error}</p>}
 
-      <div className="flex justify-end">
+      <div className="flex justify-end border-t pt-2">
         <Button
           size="lg"
           disabled={!form.canRun || isDemoMode}

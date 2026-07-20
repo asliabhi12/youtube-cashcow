@@ -55,14 +55,14 @@ function formatCreatedAt(iso: string): string {
 
 /** Tailwind classes for the status pill, by status. */
 const STATUS_STYLES: Record<JobStatus, string> = {
-  pending: "border-amber-500/40 text-amber-600 dark:text-amber-400",
-  queued: "border-violet-500/40 text-violet-600 dark:text-violet-400",
-  running: "border-sky-500/40 text-sky-600 dark:text-sky-400",
-  cancelling: "border-amber-500/40 text-amber-600 dark:text-amber-400",
+  pending: "border-warning-border text-warning-foreground",
+  queued: "border-info-border text-info-foreground",
+  running: "border-info-border text-info-foreground",
+  cancelling: "border-warning-border text-warning-foreground",
   cancelled: "border-muted-foreground/40 text-muted-foreground",
-  completed: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
-  failed: "border-red-500/40 text-red-600 dark:text-red-400",
-  upload_failed: "border-amber-500/40 text-amber-600 dark:text-amber-400",
+  completed: "border-success-border text-success-foreground",
+  failed: "border-danger-border text-danger-foreground",
+  upload_failed: "border-warning-border text-warning-foreground",
 };
 
 export default function JobsPage() {
@@ -174,26 +174,37 @@ export default function JobsPage() {
 
   if (isDemoMode) {
     return (
-      <div className="mx-auto max-w-xl px-6 py-12">
+      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:py-8">
         <DemoModeBanner />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
-      <h1 className="text-xl font-semibold tracking-tight">Jobs</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        One job runs at a time; the rest wait in a simple queue.
-      </p>
+    <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:py-8">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-primary">
+            Queue
+          </p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Jobs</h1>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            One job runs at a time; the rest wait in a simple queue.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => void load()}>
+          <RotateCw />
+          Refresh
+        </Button>
+      </div>
 
       {actionError !== null && (
-        <p className="mt-4 rounded-md border border-red-500/40 bg-red-500/5 px-3 py-2 text-sm text-red-600 dark:text-red-400">
+        <p className="mt-5 rounded-lg border border-danger-border bg-danger-surface px-4 py-3 text-sm text-danger-foreground">
           {actionError}
         </p>
       )}
 
-      <div className="mt-8">
+      <div className="mt-6">
         {state.kind === "loading" && (
           <EmptyPanel>Loading jobs…</EmptyPanel>
         )}
@@ -226,7 +237,7 @@ export default function JobsPage() {
 
 function EmptyPanel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed">
+    <div className="flex min-h-56 items-center justify-center rounded-xl border border-dashed bg-card/55 shadow-sm">
       <p className="text-sm text-muted-foreground">{children}</p>
     </div>
   );
@@ -330,10 +341,10 @@ function Section({
     return null;
   }
   return (
-    <section className="flex flex-col gap-2">
+    <section className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-        <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+        <h2 className="text-sm font-semibold tracking-tight text-foreground/95">{title}</h2>
+        <span className="rounded-full border bg-card px-2 py-0.5 text-xs font-medium text-muted-foreground">
           {count}
         </span>
       </div>
@@ -478,7 +489,7 @@ function JobRow({
   const elapsedStr = formatElapsedTime(initialJob.started_at, initialJob.finished_at, now);
 
   // Setup styles for progress bar color and layout theme
-  let progressColor = "bg-sky-500";
+  let progressColor = "bg-info";
   let borderGlow = "border-muted/60";
   let bgGradient = "from-background via-muted/5 to-muted/5";
 
@@ -487,42 +498,42 @@ function JobRow({
     initialJob.status === "pending" ||
     initialJob.status === "cancelling"
   ) {
-    progressColor = "bg-gradient-to-r from-sky-500 via-indigo-500 to-violet-500";
-    borderGlow = "border-sky-500/20 shadow-sm";
-    bgGradient = "from-background via-sky-500/[0.01] to-indigo-500/[0.01]";
+    progressColor = "bg-info";
+    borderGlow = "border-info-border shadow-sm";
+    bgGradient = "from-background via-info-surface to-background";
   } else if (initialJob.status === "completed") {
-    progressColor = "bg-emerald-500";
-    borderGlow = "border-emerald-500/20";
-    bgGradient = "from-background via-emerald-500/[0.01] to-background";
+    progressColor = "bg-success";
+    borderGlow = "border-success-border";
+    bgGradient = "from-background via-success-surface to-background";
   } else if (initialJob.status === "cancelled") {
     progressColor = "bg-muted-foreground";
     borderGlow = "border-muted-foreground/20";
     bgGradient = "from-background via-muted/10 to-background";
   } else if (initialJob.status === "failed") {
-    progressColor = "bg-red-500";
-    borderGlow = "border-red-500/20";
-    bgGradient = "from-background via-red-500/[0.01] to-background";
+    progressColor = "bg-danger";
+    borderGlow = "border-danger-border";
+    bgGradient = "from-background via-danger-surface to-background";
   } else if (initialJob.status === "upload_failed") {
-    progressColor = "bg-amber-500";
-    borderGlow = "border-amber-500/20";
-    bgGradient = "from-background via-amber-500/[0.01] to-background";
+    progressColor = "bg-warning";
+    borderGlow = "border-warning-border";
+    bgGradient = "from-background via-warning-surface to-background";
   } else if (initialJob.status === "queued") {
-    progressColor = "bg-violet-500/50";
-    borderGlow = "border-violet-500/10";
-    bgGradient = "from-background via-violet-500/[0.005] to-background";
+    progressColor = "bg-info/60";
+    borderGlow = "border-info-border";
+    bgGradient = "from-background via-info-surface to-background";
   }
 
   return (
     <li className={cn(
-      "relative overflow-hidden rounded-xl border p-5 transition-all duration-300 bg-gradient-to-br",
+      "relative overflow-hidden rounded-xl border bg-card/80 bg-gradient-to-br p-5 shadow-lg shadow-[var(--shadow-color)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl",
       borderGlow,
-      bgGradient
+      bgGradient,
     )}>
       {/* Subtle background blur/glow for active elements */}
       {isRunning && (
         <>
-          <div className="absolute -right-20 -top-20 -z-10 h-40 w-40 rounded-full bg-sky-500/5 blur-3xl" />
-          <div className="absolute -left-20 -bottom-20 -z-10 h-40 w-40 rounded-full bg-indigo-500/5 blur-3xl" />
+          <div className="absolute -right-20 -top-20 -z-10 h-40 w-40 rounded-full bg-info-surface blur-3xl" />
+          <div className="absolute -left-20 -bottom-20 -z-10 h-40 w-40 rounded-full bg-primary/10 blur-3xl" />
         </>
       )}
 
@@ -533,7 +544,7 @@ function JobRow({
             <div className="flex items-center gap-2">
               {isQueued && initialJob.queue_position !== null && (
                 <span
-                  className="flex size-5 shrink-0 items-center justify-center rounded-full border border-violet-500/40 text-[10px] font-bold text-violet-600 tabular-nums dark:text-violet-400"
+                  className="flex size-5 shrink-0 items-center justify-center rounded-full border border-info-border text-[10px] font-bold text-info-foreground tabular-nums"
                   title={`Position ${initialJob.queue_position} in the queue`}
                 >
                   #{initialJob.queue_position}
@@ -554,7 +565,7 @@ function JobRow({
           </div>
 
           <div className="flex items-center gap-2">
-            <span className={cn("rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider", STATUS_STYLES[initialJob.status])}>
+            <span className={cn("rounded-full border bg-background/55 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider", STATUS_STYLES[initialJob.status])}>
               {initialJob.status}
             </span>
           </div>
@@ -574,13 +585,13 @@ function JobRow({
             </span>
           </div>
 
-          <div className="relative h-2.5 w-full rounded-full bg-secondary overflow-hidden">
+          <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-secondary">
             <div
               className={cn("h-full rounded-full transition-all duration-500 ease-out", progressColor)}
               style={{ width: `${liveProgress}%` }}
             />
             {isRunning && (
-              <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.15),transparent)] bg-[length:200%_100%] animate-shimmer" />
+              <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,color-mix(in_oklch,var(--primary)_25%,transparent),transparent)] bg-[length:200%_100%] animate-shimmer" />
             )}
           </div>
         </div>
@@ -590,7 +601,7 @@ function JobRow({
         )}
 
         {/* Bottom Line: Elapsed time and action buttons */}
-        <div className="flex items-center justify-between pt-1 border-t border-muted/30">
+        <div className="flex flex-col gap-3 border-t border-muted/40 pt-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-xs font-medium text-muted-foreground">
             {!isQueued ? (
               <>
@@ -601,7 +612,7 @@ function JobRow({
             )}
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {canCancel && (
               <Button
                 size="sm"
@@ -609,7 +620,7 @@ function JobRow({
                 onClick={() => void runBusy("cancel", onCancel)}
                 disabled={busyAction !== null}
                 title="Stop this job"
-                className="h-8 text-xs px-2.5 text-amber-700 dark:text-amber-300"
+                className="h-8 text-xs px-2.5 text-warning-foreground"
               >
                 <Square className="size-3.5" />
                 Stop
@@ -670,7 +681,7 @@ function JobRow({
                 variant="ghost"
                 onClick={() => onRemove(initialJob)}
                 title={isQueued ? "Remove from queue" : "Remove from history"}
-                className="h-8 w-8 p-0 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
+                className="h-8 w-8 p-0 text-muted-foreground hover:text-danger-foreground"
               >
                 <X className="size-4" />
               </Button>
@@ -708,8 +719,8 @@ function JobMetadataPanel({ state }: { state: MetadataState }) {
   }
 
   return (
-    <div className="space-y-2 rounded-lg border border-emerald-500/15 bg-emerald-500/[0.03] px-3 py-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+    <div className="space-y-2 rounded-lg border border-success-border bg-success-surface px-3 py-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-success-foreground">
         AI Metadata
       </p>
       <div className="space-y-1">
@@ -740,7 +751,7 @@ function JobMetadataPanel({ state }: { state: MetadataState }) {
           {state.metadata.tags.map((tag) => (
             <span
               key={tag}
-              className="rounded-full border border-emerald-500/20 bg-background px-2 py-0.5 text-[11px] text-foreground/80"
+              className="rounded-full border border-success-border bg-background px-2 py-0.5 text-[11px] text-foreground/80"
             >
               {tag}
             </span>
@@ -765,7 +776,7 @@ function MetadataFieldHeader({
       <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
       <div className="flex items-center gap-2">
         {copied && (
-          <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+          <span className="text-[11px] font-medium text-success-foreground">
             Copied!
           </span>
         )}

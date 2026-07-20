@@ -39,8 +39,10 @@ export function ExportQualitySelector({
             <label
               key={option.value}
               className={cn(
-                "flex cursor-pointer items-start gap-3 rounded-md border px-4 py-3 transition-colors",
-                checked ? "border-primary bg-accent" : "border-input hover:bg-accent/50",
+                "flex cursor-pointer items-start gap-3 rounded-md border px-4 py-3 shadow-sm shadow-[var(--shadow-color)] transition-all duration-200",
+                checked
+                  ? "border-primary/50 bg-accent/70 ring-1 ring-primary/20"
+                  : "border-input bg-background/50 hover:border-primary/30 hover:bg-accent/35",
                 disabled && "cursor-not-allowed opacity-50",
               )}
             >
@@ -51,7 +53,7 @@ export function ExportQualitySelector({
                 checked={checked}
                 onChange={() => onChange(option.value)}
                 disabled={disabled}
-                className="mt-0.5 size-4 accent-primary"
+                className="mt-0.5 size-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
               <span className="flex flex-col gap-0.5">
                 <span className="text-sm font-medium leading-none">{option.label}</span>
