@@ -1,4 +1,12 @@
-import { Home, ListChecks, Settings, Sparkles, type LucideIcon } from "lucide-react";
+import {
+  Home,
+  ListChecks,
+  Settings,
+  SlidersHorizontal,
+  Sparkles,
+  Waypoints,
+  type LucideIcon,
+} from "lucide-react";
 
 export interface NavItem {
   label: string;
@@ -11,5 +19,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: Home },
   { label: "Jobs", href: "/jobs", icon: ListChecks },
   { label: "Profiles", href: "/profiles", icon: Sparkles },
+  { label: "Presets", href: "/presets", icon: SlidersHorizontal },
+  { label: "Destinations", href: "/destinations", icon: Waypoints },
   { label: "Settings", href: "/settings", icon: Settings },
 ];

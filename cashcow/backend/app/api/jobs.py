@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from app.models.job import Job, JobCreate, JobLogEntry, JobProgress
 from app.services import app_settings, profiles
+from app.services import destinations
 from app.services.job_logs import CLOSE, job_log_hub
 from app.services.jobs import job_store
 from app.services import job_progress
@@ -71,12 +72,19 @@ def create_job(payload: JobCreate) -> Job:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Unknown export quality: '{payload.export_quality}'",
         )
+    for destination_id in payload.destination_ids:
+        if not destinations.destination_exists(destination_id):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unknown destination: '{destination_id}'",
+            )
 
     job = job_store.create(
         payload.url,
         profile_id=profile_id,
         export_quality=payload.export_quality,
         title_seed=payload.title_seed,
+        destination_ids=payload.destination_ids,
     )
     # Remember this as the last-used profile so the Home page can re-open it.
     # Best-effort: a settings write failure must never fail the job.
@@ -93,6 +101,7 @@ def create_job(payload: JobCreate) -> Job:
         trim=payload.trim,
         profile_id=profile_id,
         export_quality=payload.export_quality,
+        destination_ids=payload.destination_ids,
     )
     # Re-read so the response reflects the status the queue just set (queued or
     # running) plus any position, rather than the transient "pending".

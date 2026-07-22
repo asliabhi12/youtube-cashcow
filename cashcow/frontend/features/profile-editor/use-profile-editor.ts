@@ -27,6 +27,7 @@ export interface ProfileDraft {
   color: ColorConfig | null;
   overlay: OverlayConfig | null;
   exportQuality: string | null;
+  allowedDestinationIds: string[];
 }
 
 const EMPTY_DRAFT: ProfileDraft = {
@@ -37,6 +38,7 @@ const EMPTY_DRAFT: ProfileDraft = {
   color: null,
   overlay: null,
   exportQuality: null,
+  allowedDestinationIds: [],
 };
 
 /** Build the API payload from a draft, dropping absent (null) sections. */
@@ -47,6 +49,7 @@ function toInput(draft: ProfileDraft): ProfileInput {
   if (draft.color !== null) input.color = draft.color;
   if (draft.overlay !== null) input.overlay = draft.overlay;
   if (draft.exportQuality !== null) input.export_quality = draft.exportQuality;
+  input.allowed_destination_ids = draft.allowedDestinationIds;
   return input;
 }
 
@@ -182,6 +185,7 @@ export function useProfileEditor(): ProfileEditorState {
           color: profile.color ?? null,
           overlay: profile.overlay ?? null,
           exportQuality: profile.export_quality ?? null,
+          allowedDestinationIds: profile.allowed_destination_ids ?? [],
         };
         setDraft(next);
         setActiveId(profile.id);

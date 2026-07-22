@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.models.destination import JobDestination
+
 # Job lifecycle states. A job is "pending" the instant it is created, "queued"
 # while it waits its turn in the FIFO queue, "running" while the engine executes
 # it, then either "completed" or "failed" once the pipeline finishes. Only one
@@ -94,6 +96,10 @@ class JobCreate(BaseModel):
     export_quality: str = Field(
         default="balanced", description="Export quality slug (see GET /export-qualities)."
     )
+    destination_ids: list[str] = Field(
+        default_factory=list,
+        description="Destination ids selected for publishing. Empty means render only.",
+    )
     title_seed: str | None = Field(
         default=None,
         min_length=1,
@@ -159,3 +165,4 @@ class Job(BaseModel):
     youtube_upload_error: str | None = None
     upload_attempts: int = 0
     cancel_requested: bool = False
+    destinations: list[JobDestination] = Field(default_factory=list)

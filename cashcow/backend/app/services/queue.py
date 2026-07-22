@@ -40,6 +40,7 @@ class _QueuedJob:
     trim: TrimRange | None
     profile_id: str
     export_quality: str
+    destination_ids: list[str]
 
 
 class JobQueue:
@@ -65,6 +66,7 @@ class JobQueue:
         trim: TrimRange | None = None,
         profile_id: str = "custom",
         export_quality: str = "balanced",
+        destination_ids: list[str] | None = None,
     ) -> None:
         """Enqueue a job and start it immediately if no job is running.
 
@@ -77,6 +79,7 @@ class JobQueue:
             trim=trim,
             profile_id=profile_id,
             export_quality=export_quality,
+            destination_ids=destination_ids or [],
         )
         with self._lock:
             self._waiting.append(item)
@@ -137,6 +140,7 @@ class JobQueue:
                 trim=item.trim,
                 profile_id=item.profile_id,
                 export_quality=item.export_quality,
+                destination_ids=item.destination_ids,
                 on_complete=self._on_complete,
             )
         except Exception as exc:  # noqa: BLE001 - keep the queue moving

@@ -253,6 +253,7 @@ class ProfileInput(BaseModel):
     # Validated against presets.is_quality() at the service layer, where the
     # quality catalogue lives; kept as a plain string here to avoid a cycle.
     export_quality: str | None = None
+    allowed_destination_ids: list[str] = Field(default_factory=list)
 
 
 class Profile(ProfileInput):

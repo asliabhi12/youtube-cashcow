@@ -9,6 +9,10 @@ import { useDemoMode } from "@/components/demo-mode/use-demo-mode";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { LogsDrawer } from "@/features/job-logs/logs-drawer";
 import {
+  JobDestinationStatusBadge,
+  PlatformBadge,
+} from "@/features/destinations/platforms";
+import {
   createJob,
   cancelJob,
   deleteJob,
@@ -16,7 +20,7 @@ import {
   jobDownloadUrl,
   jobLogsEventsUrl,
   listJobs,
-  retryYouTubeUpload,
+  retryPublish,
   type Job,
   type JobMetadata,
   type JobStatus,
@@ -129,6 +133,7 @@ export default function JobsPage() {
         url: job.url,
         profile_id: job.profile_id,
         export_quality: job.export_quality,
+        destination_ids: job.destinations.map((destination) => destination.destinationId),
       });
       await load();
     } catch {
@@ -139,7 +144,7 @@ export default function JobsPage() {
   async function handleRetryUpload(job: Job): Promise<void> {
     setActionError(null);
     try {
-      await retryYouTubeUpload(job.id);
+      await retryPublish(job.id);
       await load();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Could not retry the upload.");
@@ -600,6 +605,8 @@ function JobRow({
           <JobMetadataPanel state={metadataState} />
         )}
 
+        <JobWorkflow destinations={initialJob.destinations} />
+
         {/* Bottom Line: Elapsed time and action buttons */}
         <div className="flex flex-col gap-3 border-t border-muted/40 pt-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-xs font-medium text-muted-foreground">
@@ -633,11 +640,11 @@ function JobRow({
                 variant="outline"
                 onClick={() => void runBusy("retry", onRetryUpload)}
                 disabled={busyAction !== null}
-                title="Retry YouTube upload only"
+                title="Retry publish stage"
                 className="h-8 text-xs px-2.5"
               >
                 <UploadCloud className="size-3.5" />
-                {busyAction === "retry" ? "Retrying..." : "Retry Upload"}
+                {busyAction === "retry" ? "Retrying..." : "Retry Publish"}
               </Button>
             )}
 
@@ -690,6 +697,55 @@ function JobRow({
         </div>
       </div>
     </li>
+  );
+}
+
+function JobWorkflow({ destinations }: { destinations: Job["destinations"] }) {
+  const steps = ["Download", "Edit", "Metadata", "Render"];
+  return (
+    <div className="rounded-lg border bg-background/55 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        {steps.map((step) => (
+          <span
+            key={step}
+            className="rounded-full border border-success-border bg-success-surface px-2.5 py-1 text-xs font-medium text-success-foreground"
+          >
+            {step}
+          </span>
+        ))}
+        <span className="rounded-full border border-info-border bg-info-surface px-2.5 py-1 text-xs font-medium text-info-foreground">
+          Publish
+        </span>
+        <span className="rounded-full border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground">
+          Done
+        </span>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {destinations.length === 0 ? (
+          <p className="rounded-md border border-dashed bg-card/45 px-3 py-2 text-xs text-muted-foreground sm:col-span-2 lg:col-span-3">
+            No publishing destinations selected.
+          </p>
+        ) : (
+          destinations.map((destination) => (
+            <div
+              key={destination.id}
+              className="flex min-w-0 items-center justify-between gap-2 rounded-md border bg-card/55 px-3 py-2"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-xs font-semibold text-foreground">
+                  {destination.name}
+                </p>
+                <div className="mt-1">
+                  <PlatformBadge platform={destination.platform} />
+                </div>
+              </div>
+              <JobDestinationStatusBadge status={destination.status} />
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   );
 }
 

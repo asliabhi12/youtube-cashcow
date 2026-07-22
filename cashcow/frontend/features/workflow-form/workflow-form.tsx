@@ -8,7 +8,13 @@ import { ProfileSelector } from "@/components/profile-selector";
 import { TrimRangeSlider, formatDuration } from "@/components/trim-range-slider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  destinationInitials,
+  DestinationStatusBadge,
+  PlatformBadge,
+} from "@/features/destinations/platforms";
 import { ProfileEditor } from "@/features/profile-editor/profile-editor";
+import { cn } from "@/lib/utils";
 
 import { useWorkflowForm } from "./use-workflow-form";
 
@@ -43,13 +49,13 @@ export function WorkflowForm({ isDemoMode = false }: { isDemoMode?: boolean }) {
     <div className="flex w-full flex-col gap-7">
       {/* URL */}
       <div className="flex flex-col gap-2 rounded-lg border bg-background/35 p-4">
-        <label htmlFor="youtube-url" className="text-sm font-medium text-foreground/90">
-          YouTube URL
+        <label htmlFor="source-url" className="text-sm font-medium text-foreground/90">
+          Source URL
         </label>
         <Input
-          id="youtube-url"
+          id="source-url"
           inputMode="url"
-          placeholder="https://www.youtube.com/watch?v=…"
+          placeholder="https://www.youtube.com/watch?v=..."
           value={form.url}
           disabled={form.submitting}
           onChange={(event) => form.setUrl(event.target.value)}
@@ -75,7 +81,7 @@ export function WorkflowForm({ isDemoMode = false }: { isDemoMode?: boolean }) {
           onChange={(event) => form.setTitleSeed(event.target.value)}
         />
         <p className="text-xs text-muted-foreground">
-          This is the starting idea for the AI-generated YouTube title.
+          This is the starting idea for generated publishing metadata.
         </p>
       </div>
 
@@ -144,6 +150,72 @@ export function WorkflowForm({ isDemoMode = false }: { isDemoMode?: boolean }) {
         onChange={form.setExportQuality}
         disabled={form.submitting}
       />
+
+      <div className="flex flex-col gap-3 rounded-lg border bg-background/35 p-4">
+        <div>
+          <span className="text-sm font-medium text-foreground/90">Publish To</span>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Choose one or more destinations allowed by the selected profile.
+          </p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {form.destinations
+            .filter((destination) =>
+              editor.draft.allowedDestinationIds.includes(destination.id),
+            )
+            .map((destination) => {
+              const checked = form.selectedDestinationIds.includes(destination.id);
+              return (
+                <label
+                  key={destination.id}
+                  className={cn(
+                    "flex min-h-28 cursor-pointer flex-col rounded-lg border bg-background/55 p-3 transition-all",
+                    checked && "border-primary/45 bg-accent/70 ring-1 ring-primary/20",
+                    form.submitting && "cursor-not-allowed opacity-60",
+                  )}
+                >
+                  <span className="flex items-start justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={form.submitting}
+                        onChange={() => {
+                          form.setSelectedDestinationIds(
+                            checked
+                              ? form.selectedDestinationIds.filter((id) => id !== destination.id)
+                              : [...form.selectedDestinationIds, destination.id],
+                          );
+                        }}
+                        className="size-4 accent-primary"
+                      />
+                      <span className="grid size-8 shrink-0 place-items-center rounded-md border border-primary/20 bg-primary/10 text-[10px] font-bold text-primary">
+                        {destinationInitials(destination)}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold">
+                          {destination.name}
+                        </span>
+                        <span className="mt-1 block">
+                          <PlatformBadge platform={destination.platform} />
+                        </span>
+                      </span>
+                    </span>
+                    <DestinationStatusBadge status={destination.connectionStatus} />
+                  </span>
+                  <span className="mt-3 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                    {destination.description || "No description added."}
+                  </span>
+                </label>
+              );
+            })}
+        </div>
+        {editor.draft.allowedDestinationIds.length === 0 && (
+          <p className="rounded-lg border border-dashed bg-card/55 px-3 py-3 text-sm text-muted-foreground">
+            This profile has no allowed destinations. Add them in the profile editor above.
+          </p>
+        )}
+      </div>
 
       {form.error !== null && <p className="text-sm text-danger-foreground">{form.error}</p>}
 

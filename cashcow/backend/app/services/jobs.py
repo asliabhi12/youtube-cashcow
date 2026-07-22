@@ -9,6 +9,8 @@ from threading import Lock
 from uuid import uuid4
 
 from app.models.job import Job, JobStatus, MetadataStatus, YouTubeUploadStatus
+from app.models.destination import JobDestination, JobDestinationStatus
+from app.services import destinations
 from app.services.job_logs import job_log_hub
 
 # Statuses at which a job has begun executing (left the queue) and reached a
@@ -35,8 +37,19 @@ class JobStore:
         profile_id: str = "custom",
         export_quality: str = "balanced",
         title_seed: str | None = None,
+        destination_ids: list[str] | None = None,
     ) -> Job:
         """Create a pending job for the given URL and creative profile."""
+        selected_destination_ids = (
+            destinations.default_destination_ids()
+            if destination_ids is None
+            else destination_ids
+        )
+        destination_snapshots = [
+            _job_destination_snapshot(destination_id)
+            for destination_id in selected_destination_ids
+            if destinations.get_destination(destination_id) is not None
+        ]
         job = Job(
             id=str(uuid4()),
             url=url,
@@ -45,6 +58,7 @@ class JobStore:
             profile_id=profile_id,
             export_quality=export_quality,
             title_seed=title_seed,
+            destinations=destination_snapshots,
         )
         with self._lock:
             self._jobs[job.id] = job
@@ -220,6 +234,46 @@ class JobStore:
             job.metadata_status = status
             job.has_metadata = status == "available"
 
+    def set_destination_status(
+        self,
+        job_id: str,
+        destination_id: str,
+        status: JobDestinationStatus,
+        *,
+        video_id: str | None = None,
+        video_url: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Update one destination publish state for a job."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return
+            for destination in job.destinations:
+                if destination.destination_id == destination_id:
+                    destination.status = status
+                    destination.updated_at = datetime.now(timezone.utc)
+                    if video_id is not None:
+                        destination.video_id = video_id
+                    if video_url is not None:
+                        destination.video_url = video_url
+                    destination.error = error
+                    return
+
 
 # Process-wide store shared by all requests.
 job_store = JobStore()
+
+
+def _job_destination_snapshot(destination_id: str) -> JobDestination:
+    destination = destinations.get_destination(destination_id)
+    if destination is None:
+        raise ValueError(f"Unknown destination: {destination_id}")
+    return JobDestination(
+        id=str(uuid4()),
+        destinationId=destination.id,
+        name=destination.name,
+        platform=destination.platform,
+        status="queued",
+        updatedAt=datetime.now(timezone.utc),
+    )

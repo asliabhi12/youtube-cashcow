@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
 from app.models.profile import Profile, ProfileInput, ProfileSummary
-from app.services import app_settings, profiles
+from app.services import app_settings, destinations, profiles
 from app.services.presets import is_quality
 
 router = APIRouter(tags=["profiles"])
@@ -27,6 +27,15 @@ def _validate_export_quality(data: ProfileInput) -> None:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Unknown export quality: '{data.export_quality}'",
         )
+
+
+def _validate_allowed_destinations(data: ProfileInput) -> None:
+    for destination_id in data.allowed_destination_ids:
+        if not destinations.destination_exists(destination_id):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unknown destination: '{destination_id}'",
+            )
 
 
 @router.get("/profiles", response_model=list[ProfileSummary])
@@ -48,6 +57,7 @@ def get_profile(profile_id: str) -> Profile:
 def create_profile(payload: ProfileInput) -> Profile:
     """Create a new custom profile and return it with its assigned id."""
     _validate_export_quality(payload)
+    _validate_allowed_destinations(payload)
     return profiles.create_profile(payload)
 
 
@@ -59,6 +69,7 @@ def update_profile(profile_id: str, payload: ProfileInput) -> Profile:
     the custom profile does not exist.
     """
     _validate_export_quality(payload)
+    _validate_allowed_destinations(payload)
     try:
         return profiles.update_profile(profile_id, payload)
     except profiles.ProfileReadOnlyError as exc:

@@ -38,6 +38,47 @@ export type JobStatus =
   | "upload_failed";
 export type MetadataStatus = "idle" | "generating" | "available" | "unavailable";
 export type YouTubeUploadStatus = "idle" | "uploading" | "uploaded" | "failed";
+export type DestinationPlatform =
+  | "youtube"
+  | "tiktok"
+  | "instagram"
+  | "facebook"
+  | "linkedin"
+  | "x";
+export type DestinationStatus = "connected" | "disconnected" | "expired" | "error";
+export type DestinationOAuthStatus = "not_configured" | "authorized" | "expired" | "error";
+export type JobDestinationStatus = "queued" | "uploading" | "success" | "failed" | "skipped";
+
+export interface DestinationInput {
+  name: string;
+  platform: DestinationPlatform;
+  channelId: string;
+  thumbnail: string;
+  description: string;
+  connectionStatus: DestinationStatus;
+  oauthStatus: DestinationOAuthStatus;
+  defaultVisibility: string;
+  defaultPlaylist: string;
+  defaultLanguage: string;
+}
+
+export interface Destination extends DestinationInput {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface JobDestination {
+  id: string;
+  destinationId: string;
+  name: string;
+  platform: DestinationPlatform;
+  status: JobDestinationStatus;
+  videoId: string | null;
+  videoUrl: string | null;
+  error: string | null;
+  updatedAt: string;
+}
 
 /** A processing job as returned by the backend. */
 export interface Job {
@@ -77,6 +118,7 @@ export interface Job {
   youtube_uploaded_at: string | null;
   youtube_upload_error: string | null;
   upload_attempts: number;
+  destinations: JobDestination[];
 }
 
 /** A clip range in seconds. `end` must be greater than `start`. */
@@ -117,6 +159,7 @@ export interface CreateJobInput {
   trim?: TrimRange;
   profile_id: string;
   export_quality: string;
+  destination_ids?: string[];
 }
 
 /**
@@ -249,6 +292,7 @@ export interface ProfileInput {
   overlay?: OverlayConfig | null;
   /** Optional per-profile default export quality. */
   export_quality?: string | null;
+  allowed_destination_ids?: string[];
 }
 
 /** A selectable overlay asset for the picker. */
@@ -272,6 +316,54 @@ export interface ProfileSummary {
   label: string;
   description: string;
   builtin: boolean;
+}
+
+/** Fetch publishing destinations. Throws on a non-OK response. */
+export async function fetchDestinations(signal?: AbortSignal): Promise<Destination[]> {
+  const response = await fetch(`${API_BASE_URL}/destinations`, { signal, cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Failed to load destinations: ${response.status}`);
+  }
+  return (await response.json()) as Destination[];
+}
+
+/** Create a publishing destination. Throws on a non-OK response. */
+export async function createDestination(input: DestinationInput): Promise<Destination> {
+  const response = await fetch(`${API_BASE_URL}/destinations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to create destination: ${response.status}`);
+  }
+  return (await response.json()) as Destination;
+}
+
+/** Update a publishing destination. Throws on a non-OK response. */
+export async function updateDestination(
+  id: string,
+  input: DestinationInput,
+): Promise<Destination> {
+  const response = await fetch(`${API_BASE_URL}/destinations/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to update destination: ${response.status}`);
+  }
+  return (await response.json()) as Destination;
+}
+
+/** Delete a publishing destination. Throws on a non-OK response. */
+export async function deleteDestination(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/destinations/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to delete destination: ${response.status}`);
+  }
 }
 
 /** Application-level settings surfaced by the backend. */
@@ -554,16 +646,18 @@ export async function cancelJob(jobId: string): Promise<Job> {
   return (await response.json()) as Job;
 }
 
-/** Retry only the YouTube upload stage for a processed job. */
-export async function retryYouTubeUpload(jobId: string): Promise<Job> {
+/** Retry the publish stage for a processed job. */
+export async function retryPublish(jobId: string): Promise<Job> {
   const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/youtube/retry`, {
     method: "POST",
   });
   if (!response.ok) {
-    throw new Error(`Failed to retry YouTube upload: ${response.status}`);
+    throw new Error(`Failed to retry publish stage: ${response.status}`);
   }
   return (await response.json()) as Job;
 }
+
+export const retryYouTubeUpload = retryPublish;
 
 /** Fetch a job's log history. Throws if the server is unreachable or non-OK. */
 export async function fetchJobLogs(

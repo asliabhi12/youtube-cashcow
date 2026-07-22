@@ -41,7 +41,7 @@ from app.infrastructure.repositories import (  # noqa: E402
     WorkflowEventRepository,
 )
 from app.models.job import JobProgress, TrimRange  # noqa: E402
-from app.services import assets, job_progress  # noqa: E402
+from app.services import assets, destinations, job_progress  # noqa: E402
 from app.services.hardened_downloader import HardenedDownloader  # noqa: E402
 from app.services.job_logs import job_log_hub  # noqa: E402
 from app.services.jobs import job_store  # noqa: E402
@@ -425,43 +425,88 @@ def _execute(
                 job_log_hub.append(job_id, "ERROR", f"Workflow error: Could not generate fallback metadata: {fallback_exc}")
         _raise_if_cancelled(job_id, cancel_event)
 
-        # State transition to UPLOADING
-        job_store.set_progress(job_id, 96, "UPLOADING")
-        job_log_hub.append(job_id, "INFO", "Workflow transition: UPLOADING")
+        job = job_store.get(job_id)
+        selected_destinations = list(job.destinations) if job is not None else []
+        if not selected_destinations:
+            job_store.set_status(job_id, "completed", output_file=output_file)
+            _emit_progress(job_id, *job_progress.UPLOAD_COMPLETE)
+            job_log_hub.append(job_id, "INFO", "Job completed without publishing destinations")
+            return
 
-        if _memory_repo.is_completed(job_id, "upload_youtube"):
-            job_log_hub.append(job_id, "INFO", "Reused previous upload from agent memory.")
-            logger.info("[Job %s] AgentMemory reuse: upload_youtube already completed", job_id)
-            _workflow_event_repo.append(job_id, "upload_youtube", "reused")
-            # Still mark completed so the API reflects the right state.
+        # State transition to PUBLISHING.
+        job_store.set_progress(job_id, 96, "Publishing to destinations...")
+        job_log_hub.append(job_id, "INFO", "Workflow transition: PUBLISHING")
+
+        failures = 0
+        for job_destination in selected_destinations:
+            _raise_if_cancelled(job_id, cancel_event)
+            destination = destinations.get_destination(job_destination.destination_id)
+            if destination is None:
+                failures += 1
+                job_store.set_destination_status(
+                    job_id,
+                    job_destination.destination_id,
+                    "failed",
+                    error="Destination no longer exists",
+                )
+                continue
+            job_store.set_destination_status(job_id, destination.id, "uploading")
+            job_log_hub.append(job_id, "INFO", f"Publishing to {destination.name}")
+
+            if destination.platform == "youtube":
+                try:
+                    result = youtube_upload_service.upload_job(
+                        job_id,
+                        progress=lambda progress, message: _upload_progress(
+                            job_id, cancel_event, progress, message
+                        ),
+                        log=lambda level, message: job_log_hub.append(job_id, level, message),
+                    )
+                except YouTubeUploadError as exc:
+                    failures += 1
+                    job_store.set_destination_status(
+                        job_id,
+                        destination.id,
+                        "failed",
+                        error=str(exc),
+                    )
+                    job_log_hub.append(job_id, "WARNING", f"{destination.name} publish failed.")
+                    logger.warning("Publish failed for job %s destination %s: %s", job_id, destination.id, exc)
+                    _workflow_event_repo.append(job_id, f"publish_{destination.id}", "failed")
+                else:
+                    job_store.set_destination_status(
+                        job_id,
+                        destination.id,
+                        "success",
+                        video_id=result.video_id,
+                        video_url=result.video_url,
+                    )
+                    _workflow_event_repo.append(
+                        job_id,
+                        f"publish_{destination.id}",
+                        "completed",
+                        finished_at=datetime.now(timezone.utc).isoformat(),
+                    )
+                    job_log_hub.append(job_id, "INFO", f"{destination.name} publish complete")
+            else:
+                failures += 1
+                job_store.set_destination_status(
+                    job_id,
+                    destination.id,
+                    "skipped",
+                    error=f"{destination.platform} publishing is not implemented",
+                )
+                job_log_hub.append(job_id, "WARNING", f"{destination.name} publish skipped")
+
+        if failures:
+            job_store.set_status(job_id, "upload_failed")
+            _emit_progress(job_id, *job_progress.UPLOAD_FAILED)
+            job_log_hub.append(job_id, "WARNING", "Job output is ready; one or more destinations failed.")
+        else:
+            _memory_repo.save(job_id, "publish_destinations", "completed", artifact_path=output_file)
             job_store.set_status(job_id, "completed", output_file=output_file)
             _emit_progress(job_id, *job_progress.UPLOAD_COMPLETE)
             job_log_hub.append(job_id, "INFO", "Job completed")
-        else:
-            try:
-                youtube_upload_service.upload_job(
-                    job_id,
-                    progress=lambda progress, message: _upload_progress(
-                        job_id, cancel_event, progress, message
-                    ),
-                    log=lambda level, message: job_log_hub.append(job_id, level, message),
-                )
-            except YouTubeUploadError as exc:
-                job_store.set_status(job_id, "upload_failed")
-                _emit_progress(job_id, *job_progress.UPLOAD_FAILED)
-                job_log_hub.append(job_id, "WARNING", "Job output is ready; YouTube upload failed.")
-                logger.warning("Workflow upload stage failed for job %s: %s", job_id, exc)
-                _memory_repo.save(job_id, "upload_youtube", "failed", output_summary=str(exc))
-                _workflow_event_repo.append(job_id, "upload_youtube", "failed")
-            else:
-                _memory_repo.save(job_id, "upload_youtube", "completed", artifact_path=output_file)
-                _workflow_event_repo.append(
-                    job_id, "upload_youtube", "completed",
-                    finished_at=datetime.now(timezone.utc).isoformat(),
-                )
-                job_store.set_status(job_id, "completed", output_file=output_file)
-                _emit_progress(job_id, *job_progress.UPLOAD_COMPLETE)
-                job_log_hub.append(job_id, "INFO", "Job completed")
     except WorkflowCancelledError:
         cancel_event.set()
         job_store.set_status(job_id, "cancelled")
@@ -534,6 +579,7 @@ def start_workflow(
     trim: TrimRange | None = None,
     profile_id: str = "custom",
     export_quality: str = "balanced",
+    destination_ids: list[str] | None = None,
     on_complete: Callable[[str], None] | None = None,
 ) -> None:
     """Start the engine for a job without blocking the caller.

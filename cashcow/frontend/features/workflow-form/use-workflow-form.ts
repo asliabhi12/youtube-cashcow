@@ -6,10 +6,12 @@ import { useRouter } from "next/navigation";
 import {
   createJob,
   fetchAppSettings,
+  fetchDestinations,
   fetchExportQualities,
   fetchProfile,
   fetchProfiles,
   fetchVideoMetadata,
+  type Destination,
   type Option,
   type ProfileSummary,
 } from "@/lib/api";
@@ -46,6 +48,10 @@ export interface WorkflowFormState {
   qualities: Option[];
   exportQuality: string;
   setExportQuality: (value: string) => void;
+
+  destinations: Destination[];
+  selectedDestinationIds: string[];
+  setSelectedDestinationIds: (ids: string[]) => void;
 
   /** Video title from the metadata lookup, when available. */
   videoTitle: string | null;
@@ -91,6 +97,8 @@ export function useWorkflowForm(): WorkflowFormState {
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
   const [qualities, setQualities] = useState<Option[]>([]);
   const [exportQuality, setExportQuality] = useState(DEFAULT_QUALITY);
+  const [destinations, setDestinations] = useState<Destination[]>([]);
+  const [selectedDestinationIds, setSelectedDestinationIds] = useState<string[]>([]);
 
   const [videoTitle, setVideoTitle] = useState<string | null>(null);
   const [loadingMetadata, setLoadingMetadata] = useState(false);
@@ -112,13 +120,15 @@ export function useWorkflowForm(): WorkflowFormState {
     const controller = new AbortController();
     void (async () => {
       try {
-        const [profileList, q, settings] = await Promise.all([
+        const [profileList, q, settings, destinationList] = await Promise.all([
           fetchProfiles(controller.signal),
           fetchExportQualities(controller.signal),
           fetchAppSettings(controller.signal),
+          fetchDestinations(controller.signal),
         ]);
         setProfiles(profileList);
         setQualities(q);
+        setDestinations(destinationList);
         const last = settings.last_profile;
         const initial =
           (last !== null && profileList.some((p) => p.id === last) ? last : undefined) ??
@@ -130,6 +140,11 @@ export function useWorkflowForm(): WorkflowFormState {
           try {
             const full = await fetchProfile(initial, controller.signal);
             applyProfileQuality(full.export_quality);
+            setSelectedDestinationIds(
+              destinationList
+                .filter((destination) => full.allowed_destination_ids?.includes(destination.id))
+                .map((destination) => destination.id),
+            );
           } catch {
             // Non-fatal; keep the default quality.
           }
@@ -144,6 +159,11 @@ export function useWorkflowForm(): WorkflowFormState {
   }, []);
 
   const trimmedUrl = url.trim();
+
+  useEffect(() => {
+    const allowed = new Set(editor.draft.allowedDestinationIds);
+    setSelectedDestinationIds((prev) => prev.filter((id) => allowed.has(id)));
+  }, [editor.draft.allowedDestinationIds]);
 
   // Debounced metadata lookup keyed on the URL.
   useEffect(() => {
@@ -209,6 +229,11 @@ export function useWorkflowForm(): WorkflowFormState {
       try {
         const full = await fetchProfile(id);
         applyProfileQuality(full.export_quality);
+        setSelectedDestinationIds(
+          destinations
+            .filter((destination) => full.allowed_destination_ids?.includes(destination.id))
+            .map((destination) => destination.id),
+        );
       } catch {
         // Non-fatal.
       }
@@ -270,7 +295,11 @@ export function useWorkflowForm(): WorkflowFormState {
     }
   }, [editor, profiles, reloadProfiles]);
 
-  const canRun = trimmedUrl.length > 0 && !submitting && !editor.saving;
+  const canRun =
+    trimmedUrl.length > 0 &&
+    selectedDestinationIds.length > 0 &&
+    !submitting &&
+    !editor.saving;
 
   const submit = useCallback(async () => {
     if (trimmedUrl.length === 0 || submitting) {
@@ -312,13 +341,24 @@ export function useWorkflowForm(): WorkflowFormState {
         trim: { start: trim.start, end: trim.end },
         profile_id: runId,
         export_quality: exportQuality,
+        destination_ids: selectedDestinationIds,
       });
       router.push("/jobs");
     } catch {
       setError("Could not create the job. Is the server running?");
       setSubmitting(false);
     }
-  }, [trimmedUrl, titleSeed, submitting, editor, trim, exportQuality, reloadProfiles, router]);
+  }, [
+    trimmedUrl,
+    titleSeed,
+    submitting,
+    editor,
+    trim,
+    exportQuality,
+    selectedDestinationIds,
+    reloadProfiles,
+    router,
+  ]);
 
   return {
     url,
@@ -334,6 +374,9 @@ export function useWorkflowForm(): WorkflowFormState {
     qualities,
     exportQuality,
     setExportQuality,
+    destinations,
+    selectedDestinationIds,
+    setSelectedDestinationIds,
     videoTitle,
     loadingMetadata,
     newProfile,

@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import type { ColorConfig, Option } from "@/lib/api";
+import {
+  fetchDestinations,
+  type ColorConfig,
+  type Destination,
+  type Option,
+} from "@/lib/api";
+import { destinationInitials, PlatformBadge } from "@/features/destinations/platforms";
+import { cn } from "@/lib/utils";
 
 import type { ProfileEditorState } from "./use-profile-editor";
 import { AudioSettings } from "./sections/audio-settings";
@@ -27,7 +34,14 @@ export interface ProfileEditorProps {
   disabled?: boolean;
 }
 
-type SectionKey = "general" | "resize" | "audio" | "color" | "overlay" | "export";
+type SectionKey =
+  | "general"
+  | "destinations"
+  | "resize"
+  | "audio"
+  | "color"
+  | "overlay"
+  | "export";
 
 /** A colour summary for a collapsed grade section (how many fields differ). */
 function colorSummary(color: ColorConfig | null): string {
@@ -56,6 +70,15 @@ function colorSummary(color: ColorConfig | null): string {
  */
 export function ProfileEditor({ editor, qualities, disabled = false }: ProfileEditorProps) {
   const { draft, update, isBuiltin, activeId, issues } = editor;
+  const [destinations, setDestinations] = useState<Destination[]>([]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchDestinations(controller.signal)
+      .then(setDestinations)
+      .catch(() => setDestinations([]));
+    return () => controller.abort();
+  }, []);
 
   // Human-readable one-liners for each collapsed section header.
   const resizeSummary = (() => {
@@ -85,6 +108,10 @@ export function ProfileEditor({ editor, qualities, disabled = false }: ProfileEd
       ? "Chosen per job"
       : (qualities.find((q) => q.value === draft.exportQuality)?.label ??
         draft.exportQuality);
+  const destinationSummary =
+    draft.allowedDestinationIds.length === 0
+      ? "No publishing destinations"
+      : `${draft.allowedDestinationIds.length} allowed`;
 
   // Remembered expansion state. General starts open; the rest collapsed.
   const [open, setOpen] = useState<Set<SectionKey>>(new Set<SectionKey>(["general"]));
@@ -121,6 +148,20 @@ export function ProfileEditor({ editor, qualities, disabled = false }: ProfileEd
         {issueFor("general") !== undefined && (
           <p className="text-xs text-danger-foreground">{issueFor("general")}</p>
         )}
+      </EditorSection>
+
+      <EditorSection
+        title="Allowed Destinations"
+        open={open.has("destinations")}
+        onToggleOpen={() => toggle("destinations")}
+        summary={destinationSummary}
+      >
+        <AllowedDestinations
+          destinations={destinations}
+          selected={draft.allowedDestinationIds}
+          disabled={disabled}
+          onChange={(allowedDestinationIds) => update({ allowedDestinationIds })}
+        />
       </EditorSection>
 
       <EditorSection
@@ -212,6 +253,75 @@ export function ProfileEditor({ editor, qualities, disabled = false }: ProfileEd
           onChange={(exportQuality) => update({ exportQuality })}
         />
       </EditorSection>
+    </div>
+  );
+}
+
+function AllowedDestinations({
+  destinations,
+  selected,
+  disabled,
+  onChange,
+}: {
+  destinations: Destination[];
+  selected: string[];
+  disabled: boolean;
+  onChange: (ids: string[]) => void;
+}) {
+  function toggle(id: string): void {
+    if (selected.includes(id)) {
+      onChange(selected.filter((item) => item !== id));
+    } else {
+      onChange([...selected, id]);
+    }
+  }
+
+  if (destinations.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed bg-background/55 px-3 py-4 text-sm text-muted-foreground">
+        No destinations available.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {destinations.map((destination) => {
+        const checked = selected.includes(destination.id);
+        return (
+          <label
+            key={destination.id}
+            className={cn(
+              "flex cursor-pointer gap-3 rounded-lg border bg-background/45 p-3 transition-all",
+              checked && "border-primary/45 bg-accent/65 ring-1 ring-primary/20",
+              disabled && "cursor-not-allowed opacity-60",
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={checked}
+              disabled={disabled}
+              onChange={() => toggle(destination.id)}
+              className="mt-1 size-4 accent-primary"
+            />
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-2">
+                <span className="grid size-8 shrink-0 place-items-center rounded-md border border-primary/20 bg-primary/10 text-[10px] font-bold text-primary">
+                  {destinationInitials(destination)}
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium text-foreground">
+                    {destination.name}
+                  </span>
+                  <span className="mt-1 block">
+                    <PlatformBadge platform={destination.platform} />
+                  </span>
+                </span>
+              </span>
+            </span>
+          </label>
+        );
+      })}
     </div>
   );
 }

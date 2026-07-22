@@ -61,7 +61,7 @@ _STEP_FAILED_LABEL: dict[str, str] = {
 QUEUED = (0, "⏳ Waiting in queue...")
 COMPLETED = (100, "✅ Completed")
 UPLOAD_COMPLETE = (100, "✅ Uploaded to YouTube")
-UPLOAD_FAILED = (99, "❌ YouTube upload failed")
+UPLOAD_FAILED = (99, "Publish failed")
 CANCELLING = (0, "⏹️ Cancelling job...")
 CANCELLED = (0, "⏹️ Cancelled")
 
