@@ -38,32 +38,22 @@ export type JobStatus =
   | "upload_failed";
 export type MetadataStatus = "idle" | "generating" | "available" | "unavailable";
 export type YouTubeUploadStatus = "idle" | "uploading" | "uploaded" | "failed";
-export type DestinationPlatform =
-  | "youtube"
-  | "tiktok"
-  | "instagram"
-  | "facebook"
-  | "linkedin"
-  | "x";
-export type DestinationStatus = "connected" | "disconnected" | "expired" | "error";
-export type DestinationOAuthStatus = "not_configured" | "authorized" | "expired" | "error";
+export type DestinationPlatform = "youtube";
+export type DestinationStatus = "connected" | "needs_reconnection" | "disconnected" | "error";
 export type JobDestinationStatus = "queued" | "uploading" | "success" | "failed" | "skipped";
+export type PrivacyStatus = "private" | "unlisted" | "public";
 
-export interface DestinationInput {
+export interface Destination {
+  id: string;
   name: string;
-  platform: DestinationPlatform;
+  channelTitle: string;
   channelId: string;
   thumbnail: string;
   description: string;
+  platform: DestinationPlatform;
   connectionStatus: DestinationStatus;
-  oauthStatus: DestinationOAuthStatus;
-  defaultVisibility: string;
-  defaultPlaylist: string;
-  defaultLanguage: string;
-}
-
-export interface Destination extends DestinationInput {
-  id: string;
+  tokenExpiresAt: string | null;
+  lastSyncedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -74,6 +64,7 @@ export interface JobDestination {
   name: string;
   platform: DestinationPlatform;
   status: JobDestinationStatus;
+  progress: number;
   videoId: string | null;
   videoUrl: string | null;
   error: string | null;
@@ -327,35 +318,6 @@ export async function fetchDestinations(signal?: AbortSignal): Promise<Destinati
   return (await response.json()) as Destination[];
 }
 
-/** Create a publishing destination. Throws on a non-OK response. */
-export async function createDestination(input: DestinationInput): Promise<Destination> {
-  const response = await fetch(`${API_BASE_URL}/destinations`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to create destination: ${response.status}`);
-  }
-  return (await response.json()) as Destination;
-}
-
-/** Update a publishing destination. Throws on a non-OK response. */
-export async function updateDestination(
-  id: string,
-  input: DestinationInput,
-): Promise<Destination> {
-  const response = await fetch(`${API_BASE_URL}/destinations/${encodeURIComponent(id)}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to update destination: ${response.status}`);
-  }
-  return (await response.json()) as Destination;
-}
-
 /** Delete a publishing destination. Throws on a non-OK response. */
 export async function deleteDestination(id: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/destinations/${encodeURIComponent(id)}`, {
@@ -364,6 +326,18 @@ export async function deleteDestination(id: string): Promise<void> {
   if (!response.ok) {
     throw new Error(`Failed to delete destination: ${response.status}`);
   }
+}
+
+/** Start YouTube OAuth connect flow and return the Google authorization URL. */
+export async function connectDestination(): Promise<string> {
+  const response = await fetch(`${API_BASE_URL}/destinations/connect`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to start OAuth connect: ${response.status}`);
+  }
+  const data = (await response.json()) as { authorization_url: string };
+  return data.authorization_url;
 }
 
 /** Application-level settings surfaced by the backend. */

@@ -1,60 +1,35 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Cable, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Cable, RefreshCw, Search, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  createDestination,
+  connectDestination,
   deleteDestination,
   fetchDestinations,
-  updateDestination,
   type Destination,
-  type DestinationInput,
-  type DestinationPlatform,
-  type DestinationStatus,
 } from "@/lib/api";
 import {
   DestinationStatusBadge,
-  PLATFORM_LABELS,
-  PLATFORM_OPTIONS,
   PlatformBadge,
-  PlatformIcon,
-  destinationInitials,
 } from "@/features/destinations/platforms";
-
-type DialogState =
-  | { kind: "closed" }
-  | { kind: "add" }
-  | { kind: "edit"; destination: Destination };
-
-const EMPTY_INPUT: DestinationInput = {
-  name: "",
-  platform: "youtube",
-  channelId: "",
-  thumbnail: "",
-  description: "",
-  connectionStatus: "disconnected",
-  oauthStatus: "not_configured",
-  defaultVisibility: "private",
-  defaultPlaylist: "",
-  defaultLanguage: "en",
-};
 
 export default function DestinationsPage() {
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [loading, setLoading] = useState(true);
+  const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [platform, setPlatform] = useState<"all" | DestinationPlatform>("all");
-  const [status, setStatus] = useState<"all" | DestinationStatus>("all");
-  const [dialog, setDialog] = useState<DialogState>({ kind: "closed" });
 
   const load = useCallback(async (signal?: AbortSignal) => {
-    setError(null);
     try {
-      setDestinations(await fetchDestinations(signal));
+      const data = await fetchDestinations(signal);
+      setDestinations(data);
+      if (data.length > 0) {
+        setError(null);
+      }
     } catch {
       if (!signal?.aborted) {
         setError("Could not load destinations. Is the server running?");
@@ -72,37 +47,51 @@ export default function DestinationsPage() {
     return () => controller.abort();
   }, [load]);
 
-  const filtered = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return destinations.filter((destination) => {
-      const matchesQuery =
-        normalized.length === 0 ||
-        destination.name.toLowerCase().includes(normalized) ||
-        destination.description.toLowerCase().includes(normalized) ||
-        destination.channelId.toLowerCase().includes(normalized);
-      const matchesPlatform = platform === "all" || destination.platform === platform;
-      const matchesStatus = status === "all" || destination.connectionStatus === status;
-      return matchesQuery && matchesPlatform && matchesStatus;
-    });
-  }, [destinations, platform, query, status]);
-
-  async function handleSave(input: DestinationInput, id?: string): Promise<void> {
-    if (id === undefined) {
-      await createDestination(input);
-    } else {
-      await updateDestination(id, input);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get("error");
+    if (err) {
+      setError(decodeURIComponent(err));
+      const url = new URL(window.location.href);
+      url.searchParams.delete("error");
+      window.history.replaceState({}, "", url.toString());
     }
-    setDialog({ kind: "closed" });
-    await load();
+  }, []);
+
+  async function handleConnect(): Promise<void> {
+    setConnecting(true);
+    setError(null);
+    try {
+      const authUrl = await connectDestination();
+      window.location.href = authUrl;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start OAuth connect");
+      setConnecting(false);
+    }
   }
 
   async function handleDelete(destination: Destination): Promise<void> {
-    if (!window.confirm(`Delete destination "${destination.name}"?`)) {
+    if (!window.confirm(`Disconnect "${destination.channelTitle}"?`)) {
       return;
     }
     await deleteDestination(destination.id);
     await load();
   }
+
+  async function handleReconnect(): Promise<void> {
+    await handleConnect();
+  }
+
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (normalized.length === 0) return destinations;
+    return destinations.filter(
+      (d) =>
+        d.channelTitle.toLowerCase().includes(normalized) ||
+        d.channelId.toLowerCase().includes(normalized) ||
+        d.description.toLowerCase().includes(normalized),
+    );
+  }, [destinations, query]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:py-8">
@@ -113,137 +102,141 @@ export default function DestinationsPage() {
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">Destinations</h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            Manage where rendered videos can be published.
+            Manage connected YouTube channels for video publishing.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => window.alert("YouTube connection setup is not implemented yet.")}>
-            <Cable />
-            Connect YouTube
-          </Button>
-          <Button onClick={() => setDialog({ kind: "add" })}>
-            <Plus />
-            Add Destination
-          </Button>
-        </div>
+        <Button onClick={() => void handleConnect()} disabled={connecting}>
+          <Cable className={connecting ? "animate-pulse" : undefined} />
+          {connecting ? "Connecting..." : "Connect YouTube"}
+        </Button>
       </div>
 
-      <div className="mt-6 grid gap-3 rounded-xl border bg-card/55 p-3 shadow-sm md:grid-cols-[minmax(0,1fr)_12rem_12rem]">
-        <label className="relative">
+      <div className="mt-6">
+        <label className="relative mb-4 block max-w-xs">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search destinations"
+            placeholder="Search channels"
             className="pl-9"
           />
         </label>
-        <select
-          value={platform}
-          onChange={(event) => setPlatform(event.target.value as "all" | DestinationPlatform)}
-          className="h-11 rounded-md border border-input bg-background/70 px-3 text-sm shadow-sm"
-        >
-          <option value="all">All platforms</option>
-          {PLATFORM_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {PLATFORM_LABELS[option]}
-            </option>
-          ))}
-        </select>
-        <select
-          value={status}
-          onChange={(event) => setStatus(event.target.value as "all" | DestinationStatus)}
-          className="h-11 rounded-md border border-input bg-background/70 px-3 text-sm shadow-sm"
-        >
-          <option value="all">All statuses</option>
-          <option value="connected">Connected</option>
-          <option value="disconnected">Disconnected</option>
-          <option value="expired">Expired</option>
-          <option value="error">Error</option>
-        </select>
       </div>
 
       {error !== null && (
-        <p className="mt-4 rounded-lg border border-danger-border bg-danger-surface px-4 py-3 text-sm text-danger-foreground">
-          {error}
-        </p>
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-danger-border bg-danger-surface px-4 py-3 text-sm text-danger-foreground">
+          <p className="flex-1">{error}</p>
+          <button
+            onClick={() => setError(null)}
+            className="mt-0.5 shrink-0 opacity-60 hover:opacity-100"
+            aria-label="Dismiss"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
       )}
 
-      <div className="mt-6">
+      <div>
         {loading ? (
           <EmptyPanel>Loading destinations...</EmptyPanel>
+        ) : filtered.length === 0 && query.trim().length > 0 ? (
+          <EmptyPanel>No channels match your search.</EmptyPanel>
         ) : filtered.length === 0 ? (
-          <EmptyPanel>No destinations match your filters.</EmptyPanel>
+          <EmptyPanel>
+            <div className="flex flex-col items-center gap-3">
+              <p className="text-sm text-muted-foreground">
+                No YouTube channels connected yet.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleConnect()}
+                disabled={connecting}
+              >
+                <Cable />
+                Connect your first channel
+              </Button>
+            </div>
+          </EmptyPanel>
         ) : (
           <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filtered.map((destination) => (
               <li key={destination.id}>
-                <DestinationCard
+                <ChannelCard
                   destination={destination}
-                  onEdit={() => setDialog({ kind: "edit", destination })}
                   onDelete={() => void handleDelete(destination)}
+                  onReconnect={() => void handleReconnect()}
                 />
               </li>
             ))}
           </ul>
         )}
       </div>
-
-      {dialog.kind !== "closed" && (
-        <DestinationDialog
-          destination={dialog.kind === "edit" ? dialog.destination : undefined}
-          onClose={() => setDialog({ kind: "closed" })}
-          onSave={handleSave}
-        />
-      )}
     </div>
   );
 }
 
-function DestinationCard({
+function ChannelCard({
   destination,
-  onEdit,
   onDelete,
+  onReconnect,
 }: {
   destination: Destination;
-  onEdit: () => void;
   onDelete: () => void;
+  onReconnect: () => void;
 }) {
+  const needsReconnect = destination.connectionStatus === "needs_reconnection";
+
   return (
-    <article className="flex min-h-64 flex-col rounded-xl border bg-card/75 p-4 shadow-lg shadow-[var(--shadow-color)]">
+    <article className="flex min-h-56 flex-col rounded-xl border bg-card/75 p-4 shadow-lg shadow-[var(--shadow-color)]">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="grid size-11 shrink-0 place-items-center rounded-lg border border-primary/25 bg-primary/10 text-xs font-bold text-primary">
-            {destinationInitials(destination)}
-          </div>
+          {destination.thumbnail ? (
+            <img
+              src={destination.thumbnail}
+              alt={destination.channelTitle}
+              className="size-11 shrink-0 rounded-full border object-cover"
+            />
+          ) : (
+            <div className="grid size-11 shrink-0 place-items-center rounded-full border border-primary/25 bg-primary/10 text-xs font-bold text-primary">
+              {destinationInitials(destination)}
+            </div>
+          )}
           <div className="min-w-0">
             <h2 className="truncate text-base font-semibold tracking-tight">
-              {destination.name}
+              {destination.channelTitle}
             </h2>
-            <div className="mt-1">
+            <div className="mt-1 flex items-center gap-2">
               <PlatformBadge platform={destination.platform} />
+              <DestinationStatusBadge status={destination.connectionStatus} />
             </div>
           </div>
         </div>
-        <DestinationStatusBadge status={destination.connectionStatus} />
       </div>
 
-      <p className="mt-4 line-clamp-3 min-h-14 text-sm leading-relaxed text-muted-foreground">
-        {destination.description || "No description added."}
-      </p>
-
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+      <div className="mt-4 space-y-2 text-xs">
         <Info label="Channel ID" value={destination.channelId || "-"} />
-        <Info label="Visibility" value={destination.defaultVisibility} />
-        <Info label="Playlist" value={destination.defaultPlaylist || "-"} />
-        <Info label="Language" value={destination.defaultLanguage} />
+        {destination.lastSyncedAt && (
+          <Info
+            label="Last Synced"
+            value={new Date(destination.lastSyncedAt).toLocaleString()}
+          />
+        )}
       </div>
 
-      <div className="mt-auto flex justify-end gap-1.5 border-t pt-3">
-        <Button size="sm" variant="ghost" onClick={onEdit}>
-          <Pencil />
-          Edit
-        </Button>
+      {destination.description && (
+        <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+          {destination.description}
+        </p>
+      )}
+
+      <div className="mt-auto flex items-center justify-end gap-1.5 border-t pt-3">
+        {needsReconnect && (
+          <Button size="sm" variant="outline" onClick={onReconnect}>
+            <RefreshCw />
+            Reconnect
+          </Button>
+        )}
         <Button
           size="sm"
           variant="ghost"
@@ -251,7 +244,7 @@ function DestinationCard({
           className="text-danger-foreground hover:text-danger"
         >
           <Trash2 />
-          Delete
+          Disconnect
         </Button>
       </div>
     </article>
@@ -274,182 +267,23 @@ function Info({ label, value }: { label: string; value: string }) {
 function EmptyPanel({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-56 items-center justify-center rounded-xl border border-dashed bg-card/55">
-      <p className="text-sm text-muted-foreground">{children}</p>
+      {typeof children === "string" ? (
+        <p className="text-sm text-muted-foreground">{children}</p>
+      ) : (
+        children
+      )}
     </div>
   );
 }
 
-function DestinationDialog({
-  destination,
-  onClose,
-  onSave,
-}: {
-  destination?: Destination;
-  onClose: () => void;
-  onSave: (input: DestinationInput, id?: string) => Promise<void>;
-}) {
-  const [draft, setDraft] = useState<DestinationInput>(
-    destination === undefined
-      ? EMPTY_INPUT
-      : {
-          name: destination.name,
-          platform: destination.platform,
-          channelId: destination.channelId,
-          thumbnail: destination.thumbnail,
-          description: destination.description,
-          connectionStatus: destination.connectionStatus,
-          oauthStatus: destination.oauthStatus,
-          defaultVisibility: destination.defaultVisibility,
-          defaultPlaylist: destination.defaultPlaylist,
-          defaultLanguage: destination.defaultLanguage,
-        },
-  );
-  const [saving, setSaving] = useState(false);
-  const canSave = draft.name.trim().length > 0 && !saving;
-
-  async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (!canSave) {
-      return;
-    }
-    setSaving(true);
-    try {
-      await onSave({ ...draft, name: draft.name.trim() }, destination?.id);
-    } finally {
-      setSaving(false);
-    }
+function destinationInitials(destination: Pick<Destination, "channelTitle" | "thumbnail">) {
+  if (destination.thumbnail.trim()) {
+    return destination.thumbnail.trim().slice(0, 3).toUpperCase();
   }
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-background/80 p-4 backdrop-blur-sm">
-      <form
-        onSubmit={(event) => void submit(event)}
-        className="w-full max-w-2xl rounded-xl border bg-card p-5 shadow-2xl shadow-[var(--shadow-color)]"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight">
-              {destination === undefined ? "Add Destination" : "Edit Destination"}
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Platform settings are stored with the destination, not with profiles.
-            </p>
-          </div>
-          <Button size="icon" variant="ghost" onClick={onClose} title="Close">
-            <X />
-          </Button>
-        </div>
-
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <Field label="Name">
-            <Input
-              value={draft.name}
-              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-              placeholder="Ramayani Rides"
-              required
-            />
-          </Field>
-          <Field label="Platform">
-            <select
-              value={draft.platform}
-              onChange={(event) =>
-                setDraft({ ...draft, platform: event.target.value as DestinationPlatform })
-              }
-              className="h-11 w-full rounded-md border border-input bg-background/70 px-3 text-sm shadow-sm"
-            >
-              {PLATFORM_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {PLATFORM_LABELS[option]}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Channel ID">
-            <Input
-              value={draft.channelId}
-              onChange={(event) => setDraft({ ...draft, channelId: event.target.value })}
-              placeholder="External channel or account id"
-            />
-          </Field>
-          <Field label="Thumbnail">
-            <Input
-              value={draft.thumbnail}
-              onChange={(event) => setDraft({ ...draft, thumbnail: event.target.value })}
-              placeholder="Initials or image URL later"
-            />
-          </Field>
-          <Field label="Connection Status">
-            <select
-              value={draft.connectionStatus}
-              onChange={(event) =>
-                setDraft({ ...draft, connectionStatus: event.target.value as DestinationStatus })
-              }
-              className="h-11 w-full rounded-md border border-input bg-background/70 px-3 text-sm shadow-sm"
-            >
-              <option value="connected">Connected</option>
-              <option value="disconnected">Disconnected</option>
-              <option value="expired">Expired</option>
-              <option value="error">Error</option>
-            </select>
-          </Field>
-          <Field label="Default Visibility">
-            <Input
-              value={draft.defaultVisibility}
-              onChange={(event) => setDraft({ ...draft, defaultVisibility: event.target.value })}
-              placeholder="private"
-            />
-          </Field>
-          <Field label="Default Playlist">
-            <Input
-              value={draft.defaultPlaylist}
-              onChange={(event) => setDraft({ ...draft, defaultPlaylist: event.target.value })}
-            />
-          </Field>
-          <Field label="Default Language">
-            <Input
-              value={draft.defaultLanguage}
-              onChange={(event) => setDraft({ ...draft, defaultLanguage: event.target.value })}
-              placeholder="en"
-            />
-          </Field>
-          <label className="flex flex-col gap-2 sm:col-span-2">
-            <span className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-              Description
-            </span>
-            <textarea
-              value={draft.description}
-              onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-              className="min-h-24 rounded-md border border-input bg-background/70 px-4 py-3 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </label>
-        </div>
-
-        <div className="mt-5 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-            <PlatformIcon platform={draft.platform} />
-            {PLATFORM_LABELS[draft.platform]} connection setup is a future backend step.
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!canSave}>
-              {saving ? "Saving..." : "Save Destination"}
-            </Button>
-          </div>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="flex flex-col gap-2">
-      <span className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-        {label}
-      </span>
-      {children}
-    </label>
-  );
+  return destination.channelTitle
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 }

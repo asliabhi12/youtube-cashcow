@@ -1,49 +1,45 @@
-"""Destination management schemas.
-
-A destination is an external publishing target. The initial implementation uses
-an in-memory catalogue seeded with YouTube channels, but the model is platform
-neutral so future providers can be added without reshaping profiles or jobs.
-"""
+"""Destination management schemas."""
 
 from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-DestinationPlatform = Literal[
-    "youtube",
-    "tiktok",
-    "instagram",
-    "facebook",
-    "linkedin",
-    "x",
-]
-DestinationStatus = Literal["connected", "disconnected", "expired", "error"]
-DestinationOAuthStatus = Literal["not_configured", "authorized", "expired", "error"]
+DestinationPlatform = Literal["youtube"]
+DestinationStatus = Literal["connected", "needs_reconnection", "disconnected", "error"]
 JobDestinationStatus = Literal["queued", "uploading", "success", "failed", "skipped"]
+PrivacyStatus = Literal["private", "unlisted", "public"]
 
 
-class DestinationInput(BaseModel):
-    """Editable destination fields."""
+class UploadSettings(BaseModel):
+    """Per-job/per-upload YouTube metadata and visibility settings."""
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(min_length=1)
-    platform: DestinationPlatform
-    channel_id: str = Field(default="", alias="channelId")
-    thumbnail: str = ""
+    title: str | None = None
     description: str = ""
-    connection_status: DestinationStatus = Field(default="disconnected", alias="connectionStatus")
-    oauth_status: DestinationOAuthStatus = Field(default="not_configured", alias="oauthStatus")
-    default_visibility: str = Field(default="private", alias="defaultVisibility")
-    default_playlist: str = Field(default="", alias="defaultPlaylist")
-    default_language: str = Field(default="en", alias="defaultLanguage")
+    tags: list[str] = Field(default_factory=list)
+    privacy: PrivacyStatus = "private"
+    playlist: str = ""
+    thumbnail: str = ""
+    language: str = "en"
+    category: str = "22"
+    made_for_kids: bool = Field(default=False, alias="madeForKids")
 
 
-class Destination(DestinationInput):
-    """A stored publishing target."""
+class Destination(BaseModel):
+    """A connected YouTube channel, without OAuth secrets."""
 
     id: str
+    name: str
+    channel_title: str = Field(alias="channelTitle")
+    channel_id: str = Field(alias="channelId")
+    thumbnail: str
+    description: str = ""
+    platform: DestinationPlatform = "youtube"
+    connection_status: DestinationStatus = Field(alias="connectionStatus")
+    token_expires_at: datetime | None = Field(default=None, alias="tokenExpiresAt")
+    last_synced_at: datetime | None = Field(default=None, alias="lastSyncedAt")
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
 
@@ -56,8 +52,17 @@ class JobDestination(BaseModel):
     name: str
     platform: DestinationPlatform
     status: JobDestinationStatus = "queued"
+    progress: int = Field(default=0, ge=0, le=100)
     video_id: str | None = Field(default=None, alias="videoId")
     video_url: str | None = Field(default=None, alias="videoUrl")
     error: str | None = None
+    upload_settings: UploadSettings = Field(default_factory=UploadSettings, alias="uploadSettings")
     updated_at: datetime = Field(alias="updatedAt")
 
+
+class DestinationTokenRecord(BaseModel):
+    """Server-side destination record including OAuth credentials."""
+
+    destination: Destination
+    access_token: str
+    refresh_token: str

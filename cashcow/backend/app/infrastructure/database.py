@@ -49,7 +49,15 @@ def init_database() -> None:
             conn = sqlite3.connect(str(DB_PATH))
             tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
             conn.close()
-            required = {"jobs", "metadata", "workflow_events", "agent_memory"}
+            required = {
+                "jobs",
+                "metadata",
+                "workflow_events",
+                "agent_memory",
+                "destinations",
+                "upload_history",
+                "oauth_states",
+            }
             if required.issubset(tables):
                 db_ok = True
         except Exception:
@@ -67,7 +75,15 @@ def init_database() -> None:
                 conn = sqlite3.connect(str(DB_PATH))
                 tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
                 conn.close()
-                required = {"jobs", "metadata", "workflow_events", "agent_memory"}
+                required = {
+                    "jobs",
+                    "metadata",
+                    "workflow_events",
+                    "agent_memory",
+                    "destinations",
+                    "upload_history",
+                    "oauth_states",
+                }
                 if required.issubset(tables):
                     db_ok = True
             except Exception:
@@ -128,6 +144,48 @@ def init_database() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_agent_memory_job_task ON agent_memory(job_id, task);
             CREATE INDEX IF NOT EXISTS idx_workflow_events_job ON workflow_events(job_id);
+
+            CREATE TABLE IF NOT EXISTS destinations (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                channel_title TEXT NOT NULL,
+                channel_id TEXT NOT NULL UNIQUE,
+                thumbnail TEXT,
+                description TEXT,
+                connection_status TEXT NOT NULL,
+                access_token TEXT NOT NULL,
+                refresh_token TEXT NOT NULL,
+                token_expires_at TEXT,
+                last_synced_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS upload_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL,
+                destination_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                progress INTEGER NOT NULL DEFAULT 0,
+                video_id TEXT,
+                video_url TEXT,
+                error TEXT,
+                upload_settings TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (job_id) REFERENCES jobs(id),
+                FOREIGN KEY (destination_id) REFERENCES destinations(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_upload_history_job ON upload_history(job_id);
+            CREATE INDEX IF NOT EXISTS idx_upload_history_destination ON upload_history(destination_id);
+
+            CREATE TABLE IF NOT EXISTS oauth_states (
+                state TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_oauth_states_created ON oauth_states(created_at);
         """)
         conn.commit()
         conn.close()
@@ -144,7 +202,10 @@ def reset_database_for_testing() -> None:
         DROP TABLE IF EXISTS agent_memory;
         DROP TABLE IF EXISTS workflow_events;
         DROP TABLE IF EXISTS metadata;
+        DROP TABLE IF EXISTS upload_history;
+        DROP TABLE IF EXISTS destinations;
         DROP TABLE IF EXISTS jobs;
+        DROP TABLE IF EXISTS oauth_states;
     """)
     conn.commit()
     conn.close()

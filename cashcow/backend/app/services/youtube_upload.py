@@ -1,4 +1,8 @@
-"""YouTube upload service for the final workflow stage."""
+"""YouTube upload service for the final workflow stage.
+
+Each upload uses per-destination OAuth credentials so that multiple connected
+YouTube channels can be published to independently.
+"""
 
 from __future__ import annotations
 
@@ -9,14 +13,16 @@ import json
 import logging
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from app.core.config import get_config_value, youtube_upload_config
+from app.core.config import youtube_upload_config
+from app.models.destination import JobDestinationStatus, UploadSettings
 from app.models.job import JobLogLevel
 from app.models.metadata import VideoMetadata
+from app.services import destinations
 from app.services.jobs import job_store
 from app.services.metadata import metadata_service
+from app.services.youtube_oauth import access_token_for_destination
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +52,9 @@ class YouTubeUploadResult:
 class YouTubeUploader:
     """OAuth-backed YouTube uploader using the resumable upload endpoint."""
 
+    def __init__(self, access_token: str) -> None:
+        self._access_token = access_token
+
     def upload(
         self,
         *,
@@ -59,10 +68,9 @@ class YouTubeUploader:
         size = video_path.stat().st_size
         logger.info("YouTube upload starting: path=%s size=%s", video_path, size)
         progress(96, "Preparing YouTube upload...")
-        access_token = self._access_token()
-        session_url = self._start_resumable_session(access_token, metadata, size)
+        session_url = self._start_resumable_session(metadata, size)
         progress(98, "Uploading video to YouTube...")
-        response = self._upload_file(session_url, video_path, access_token)
+        response = self._upload_file(session_url, video_path)
         video_id = str(response.get("id") or "").strip()
         if not video_id:
             raise YouTubeUploadError("YouTube response did not include a video id")
@@ -75,44 +83,8 @@ class YouTubeUploader:
             privacy_status=youtube_upload_config.PRIVACY_STATUS,
         )
 
-    def _access_token(self) -> str:
-        missing = [
-            name
-            for name, value in {
-                "YOUTUBE_CLIENT_ID": _config_value("YOUTUBE_CLIENT_ID"),
-                "YOUTUBE_CLIENT_SECRET": _config_value("YOUTUBE_CLIENT_SECRET"),
-                "YOUTUBE_REFRESH_TOKEN": _config_value("YOUTUBE_REFRESH_TOKEN"),
-            }.items()
-            if not value
-        ]
-        if missing:
-            raise YouTubeUploadError(
-                "YouTube OAuth is not configured: missing " + ", ".join(missing)
-            )
-
-        payload = urlencode(
-            {
-                "client_id": _config_value("YOUTUBE_CLIENT_ID"),
-                "client_secret": _config_value("YOUTUBE_CLIENT_SECRET"),
-                "refresh_token": _config_value("YOUTUBE_REFRESH_TOKEN"),
-                "grant_type": "refresh_token",
-            }
-        ).encode("utf-8")
-        request = Request(
-            youtube_upload_config.TOKEN_URI,
-            data=payload,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            method="POST",
-        )
-        response = _json_request(request)
-        access_token = str(response.get("access_token") or "").strip()
-        if not access_token:
-            raise YouTubeUploadError("OAuth token response did not include an access token")
-        return access_token
-
     def _start_resumable_session(
         self,
-        access_token: str,
         metadata: UploadMetadata,
         size: int,
     ) -> str:
@@ -132,7 +104,7 @@ class YouTubeUploader:
             youtube_upload_config.RESUMABLE_UPLOAD_URL,
             data=json.dumps(body).encode("utf-8"),
             headers={
-                "Authorization": f"Bearer {access_token}",
+                "Authorization": f"Bearer {self._access_token}",
                 "Content-Type": "application/json; charset=UTF-8",
                 "X-Upload-Content-Type": "video/mp4",
                 "X-Upload-Content-Length": str(size),
@@ -148,13 +120,13 @@ class YouTubeUploader:
             raise YouTubeUploadError("YouTube did not return a resumable upload URL")
         return location
 
-    def _upload_file(self, session_url: str, video_path: Path, access_token: str) -> dict:
+    def _upload_file(self, session_url: str, video_path: Path) -> dict:
         data = video_path.read_bytes()
         request = Request(
             session_url,
             data=data,
             headers={
-                "Authorization": f"Bearer {access_token}",
+                "Authorization": f"Bearer {self._access_token}",
                 "Content-Length": str(len(data)),
                 "Content-Type": "video/mp4",
             },
@@ -164,12 +136,13 @@ class YouTubeUploader:
 
 
 class YouTubeUploadService:
-    def __init__(self, uploader: YouTubeUploader | None = None) -> None:
-        self._uploader = uploader or YouTubeUploader()
+    def __init__(self) -> None:
+        pass
 
     def upload_job(
         self,
         job_id: str,
+        destination_id: str,
         *,
         progress: Callable[[int, str], None],
         log: Callable[[JobLogLevel, str], None] | None = None,
@@ -182,22 +155,44 @@ class YouTubeUploadService:
 
         video_path = Path(job.output_file)
         upload_metadata = _metadata_for_job(job_id)
-        job_store.set_upload_started(job_id)
-        _log(log, "INFO", "YouTube upload started.")
+        _log(log, "INFO", f"YouTube upload started for destination {destination_id}.")
         _log(log, "INFO", f"Uploading processed video: {video_path} ({_file_size(video_path)} bytes)")
+
+        access_token = access_token_for_destination(destination_id)
+        uploader = YouTubeUploader(access_token)
+        job_store.set_upload_started(job_id)
+
         try:
-            result = self._uploader.upload(
+            result = uploader.upload(
                 video_path=video_path,
                 metadata=upload_metadata,
                 progress=progress,
             )
-        except Exception as exc:  # noqa: BLE001 - normalize upload failures
+        except Exception as exc:
             message = str(exc)
-            logger.warning("YouTube upload failed for job %s: %s", job_id, message)
+            logger.warning("YouTube upload failed for job %s destination %s: %s", job_id, destination_id, message)
+            job_store.set_destination_status(
+                job_id, destination_id, "failed", error=message,
+            )
             job_store.set_upload_result(job_id, "failed", error=message)
-            _log(log, "ERROR", f"YouTube upload failed: {message}")
+            destinations.record_upload(
+                job_id=job_id,
+                destination_id=destination_id,
+                status="failed",
+                progress=0,
+                upload_settings=UploadSettings(),
+                error=message,
+            )
+            _log(log, "ERROR", f"YouTube upload failed for {destination_id}: {message}")
             raise YouTubeUploadError(message) from exc
 
+        job_store.set_destination_status(
+            job_id,
+            destination_id,
+            "success",
+            video_id=result.video_id,
+            video_url=result.video_url,
+        )
         job_store.set_upload_result(
             job_id,
             "uploaded",
@@ -205,7 +200,16 @@ class YouTubeUploadService:
             video_url=result.video_url,
             uploaded_at=result.uploaded_at,
         )
-        _log(log, "INFO", f"YouTube upload complete: {result.video_id}")
+        destinations.record_upload(
+            job_id=job_id,
+            destination_id=destination_id,
+            status="success",
+            progress=100,
+            upload_settings=UploadSettings(),
+            video_id=result.video_id,
+            video_url=result.video_url,
+        )
+        _log(log, "INFO", f"YouTube upload complete for {destination_id}: {result.video_id}")
         return result
 
 
@@ -272,10 +276,6 @@ def _log(
 ) -> None:
     if callback is not None:
         callback(level, message)
-
-
-def _config_value(name: str) -> str | None:
-    return get_config_value(name)
 
 
 youtube_upload_service = YouTubeUploadService()

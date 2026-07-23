@@ -49,7 +49,7 @@ def job():
     job_store.delete(created.id)
 
 
-def _fake_successful_upload(job_id, progress, log):
+def _fake_successful_upload(job_id, destination_id, progress, log):
     uploaded_at = metadata_module.datetime.now(metadata_module.timezone.utc)
     job_store.set_upload_started(job_id)
     job_store.set_upload_result(
@@ -58,6 +58,13 @@ def _fake_successful_upload(job_id, progress, log):
         video_id="yt123",
         video_url="https://www.youtube.com/watch?v=yt123",
         uploaded_at=uploaded_at,
+    )
+    job_store.set_destination_status(
+        job_id,
+        destination_id,
+        "success",
+        video_id="yt123",
+        video_url="https://www.youtube.com/watch?v=yt123",
     )
     return YouTubeUploadResult(
         video_id="yt123",

@@ -457,6 +457,7 @@ def _execute(
                 try:
                     result = youtube_upload_service.upload_job(
                         job_id,
+                        destination.id,
                         progress=lambda progress, message: _upload_progress(
                             job_id, cancel_event, progress, message
                         ),
@@ -464,23 +465,10 @@ def _execute(
                     )
                 except YouTubeUploadError as exc:
                     failures += 1
-                    job_store.set_destination_status(
-                        job_id,
-                        destination.id,
-                        "failed",
-                        error=str(exc),
-                    )
                     job_log_hub.append(job_id, "WARNING", f"{destination.name} publish failed.")
                     logger.warning("Publish failed for job %s destination %s: %s", job_id, destination.id, exc)
                     _workflow_event_repo.append(job_id, f"publish_{destination.id}", "failed")
                 else:
-                    job_store.set_destination_status(
-                        job_id,
-                        destination.id,
-                        "success",
-                        video_id=result.video_id,
-                        video_url=result.video_url,
-                    )
                     _workflow_event_repo.append(
                         job_id,
                         f"publish_{destination.id}",

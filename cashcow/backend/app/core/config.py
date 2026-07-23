@@ -105,7 +105,11 @@ class YouTubeUploadConfig:
     ACCOUNT_ID: Final[str] = os.getenv("YOUTUBE_ACCOUNT_ID", "default")
     REDIRECT_URI: Final[str] = (
         get_config_value("YOUTUBE_REDIRECT_URI")
-        or "http://localhost:8000/youtube/auth/callback"
+        or "http://localhost:8000/oauth/google/callback"
+    )
+    FRONTEND_DESTINATIONS_URL: Final[str] = (
+        get_config_value("FRONTEND_DESTINATIONS_URL")
+        or "http://localhost:3000/destinations"
     )
     TOKEN_URI: Final[str] = os.getenv(
         "YOUTUBE_TOKEN_URI",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Clipboard, Download, ExternalLink, RotateCw, ScrollText, Square, UploadCloud, X } from "lucide-react";
+import { Check, Clipboard, Download, ExternalLink, RotateCw, ScrollText, Square, UploadCloud, Video, X } from "lucide-react";
 
 import { DemoModeBanner } from "@/components/demo-mode/demo-mode-banner";
 import { useDemoMode } from "@/components/demo-mode/use-demo-mode";
@@ -702,6 +702,9 @@ function JobRow({
 
 function JobWorkflow({ destinations }: { destinations: Job["destinations"] }) {
   const steps = ["Download", "Edit", "Metadata", "Render"];
+  const hasPublishStep = destinations.some(
+    (d) => d.status === "uploading" || d.status === "success",
+  );
   return (
     <div className="rounded-lg border bg-background/55 p-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -713,7 +716,14 @@ function JobWorkflow({ destinations }: { destinations: Job["destinations"] }) {
             {step}
           </span>
         ))}
-        <span className="rounded-full border border-info-border bg-info-surface px-2.5 py-1 text-xs font-medium text-info-foreground">
+        <span
+          className={cn(
+            "rounded-full border px-2.5 py-1 text-xs font-medium",
+            hasPublishStep
+              ? "border-success-border bg-success-surface text-success-foreground"
+              : "border-info-border bg-info-surface text-info-foreground",
+          )}
+        >
           Publish
         </span>
         <span className="rounded-full border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground">
@@ -730,17 +740,43 @@ function JobWorkflow({ destinations }: { destinations: Job["destinations"] }) {
           destinations.map((destination) => (
             <div
               key={destination.id}
-              className="flex min-w-0 items-center justify-between gap-2 rounded-md border bg-card/55 px-3 py-2"
+              className="flex flex-col gap-1.5 rounded-md border bg-card/55 px-3 py-2"
             >
-              <div className="min-w-0">
-                <p className="truncate text-xs font-semibold text-foreground">
-                  {destination.name}
-                </p>
-                <div className="mt-1">
-                  <PlatformBadge platform={destination.platform} />
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold text-foreground">
+                    {destination.name}
+                  </p>
+                  <div className="mt-0.5">
+                    <PlatformBadge platform={destination.platform} />
+                  </div>
                 </div>
+                <JobDestinationStatusBadge status={destination.status} />
               </div>
-              <JobDestinationStatusBadge status={destination.status} />
+              {destination.status === "uploading" && destination.progress > 0 && (
+                <div className="h-1 w-full overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className="h-full rounded-full bg-info transition-all duration-500"
+                    style={{ width: `${destination.progress}%` }}
+                  />
+                </div>
+              )}
+              {destination.status === "success" && destination.videoUrl && (
+                <a
+                  href={destination.videoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-info-foreground hover:underline"
+                >
+                  <Video className="size-3" />
+                  Watch on YouTube
+                </a>
+              )}
+              {destination.status === "failed" && destination.error && (
+                <p className="truncate text-[11px] text-danger-foreground" title={destination.error}>
+                  {destination.error}
+                </p>
+              )}
             </div>
           ))
         )}

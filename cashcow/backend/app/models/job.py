@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.models.destination import JobDestination
+from app.models.destination import JobDestination, UploadSettings
 
 # Job lifecycle states. A job is "pending" the instant it is created, "queued"
 # while it waits its turn in the FIFO queue, "running" while the engine executes
@@ -99,6 +99,10 @@ class JobCreate(BaseModel):
     destination_ids: list[str] = Field(
         default_factory=list,
         description="Destination ids selected for publishing. Empty means render only.",
+    )
+    upload_settings: UploadSettings = Field(
+        default_factory=UploadSettings,
+        description="Default upload settings applied to each selected destination.",
     )
     title_seed: str | None = Field(
         default=None,
