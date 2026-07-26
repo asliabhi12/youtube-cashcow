@@ -27,6 +27,7 @@ from app.services.youtube_oauth import access_token_for_destination
 logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT_SECONDS = 60
+UPLOAD_FILE_TIMEOUT_SECONDS = 1800  # 30 minutes for uploading large video files (400 MB+)
 VIDEO_URL_TEMPLATE = "https://www.youtube.com/watch?v={video_id}"
 
 
@@ -132,7 +133,7 @@ class YouTubeUploader:
             },
             method="PUT",
         )
-        return _json_request(request)
+        return _json_request(request, timeout=UPLOAD_FILE_TIMEOUT_SECONDS)
 
 
 class YouTubeUploadService:
@@ -238,9 +239,9 @@ def _title_from_output_name(output_name: str | None) -> str | None:
     return Path(output_name).stem.replace("_", " ").replace("-", " ").strip() or None
 
 
-def _json_request(request: Request) -> dict:
+def _json_request(request: Request, timeout: int = REQUEST_TIMEOUT_SECONDS) -> dict:
     try:
-        with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+        with urlopen(request, timeout=timeout) as response:
             raw = response.read().decode("utf-8")
     except (HTTPError, URLError, TimeoutError) as exc:
         raise YouTubeUploadError(_error_detail(exc)) from exc

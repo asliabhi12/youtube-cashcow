@@ -1,52 +1,82 @@
 import logging
 import sqlite3
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parents[4] / "cashcow.db"
-
-
+from app.core.config import get_app_config
 
 logger = logging.getLogger(__name__)
 
+
+class _DBPathProxy:
+    @property
+    def _target(self) -> Path:
+        return get_db_path()
+
+    def resolve(self):
+        return self._target.resolve()
+
+    def exists(self):
+        return self._target.exists()
+
+    def unlink(self, missing_ok=False):
+        return self._target.unlink(missing_ok=missing_ok)
+
+    @property
+    def parent(self):
+        return self._target.parent
+
+    def __str__(self):
+        return str(self._target)
+
+    def __fspath__(self):
+        return str(self._target)
+
+
+DB_PATH = _DBPathProxy()
 
 _init_lock = threading.Lock()
 _init_done = False
 
 
+def get_db_path() -> Path:
+    return get_app_config().db.sqlite_path
+
+
 def _get_connection() -> sqlite3.Connection:
-    resolved = str(DB_PATH.resolve())
+    db_path = get_db_path()
+    resolved = str(db_path.resolve())
     logger.info(
         "[_get_connection] connecting to %s (file_exists=%s, init_done=%s)",
         resolved,
-        DB_PATH.exists(),
+        db_path.exists(),
         _init_done,
     )
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
-    
-    # Log every discovered table
+
     try:
         tables = [row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
         logger.info("[_get_connection] resolved database path: %s", resolved)
         logger.info("[_get_connection] discovered tables: %s", tables)
     except Exception as exc:
         logger.error("[_get_connection] failed to list tables: %s", exc)
-        
+
     return conn
 
 
 def init_database() -> None:
     global _init_done
-    resolved = str(DB_PATH.resolve())
-    
-    # Verify if database exists and contains the expected tables
+    db_path = get_db_path()
+    resolved = str(db_path.resolve())
+
     db_ok = False
-    if DB_PATH.exists():
+    if db_path.exists():
         try:
-            conn = sqlite3.connect(str(DB_PATH))
+            conn = sqlite3.connect(str(db_path))
             tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
             conn.close()
             required = {
@@ -66,13 +96,12 @@ def init_database() -> None:
     if _init_done and db_ok:
         logger.info("[init_database] skipped (already initialised and verified, db=%s)", resolved)
         return
-        
+
     with _init_lock:
-        # Re-check db_ok inside lock
         db_ok = False
-        if DB_PATH.exists():
+        if db_path.exists():
             try:
-                conn = sqlite3.connect(str(DB_PATH))
+                conn = sqlite3.connect(str(db_path))
                 tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
                 conn.close()
                 required = {
@@ -88,17 +117,17 @@ def init_database() -> None:
                     db_ok = True
             except Exception:
                 db_ok = False
-                
+
         if _init_done and db_ok:
             logger.info("[init_database] skipped (already initialised and verified, db=%s)", resolved)
             return
-            
+
         logger.info(
             "[init_database] creating schema at %s (file_exists=%s)",
             resolved,
-            DB_PATH.exists(),
+            db_path.exists(),
         )
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = _get_connection()
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS jobs (
@@ -188,6 +217,13 @@ def init_database() -> None:
             CREATE INDEX IF NOT EXISTS idx_oauth_states_created ON oauth_states(created_at);
         """)
         conn.commit()
+
+        cur = conn.execute("SELECT COUNT(*) FROM destinations")
+        count = cur.fetchone()[0]
+        rows = [dict(r) for r in conn.execute("SELECT * FROM destinations").fetchall()]
+        logger.info("[init_database] Absolute SQLite database path: %s", resolved)
+        logger.info("[init_database] Current destinations count: %d", count)
+
         conn.close()
         _init_done = True
         logger.info("[init_database] schema created at %s", resolved)
@@ -195,7 +231,8 @@ def init_database() -> None:
 
 def reset_database_for_testing() -> None:
     global _init_done
-    resolved = str(DB_PATH.resolve())
+    db_path = get_db_path()
+    resolved = str(db_path.resolve())
     logger.info("[reset_database_for_testing] resetting db at %s", resolved)
     conn = _get_connection()
     conn.executescript("""
@@ -210,6 +247,9 @@ def reset_database_for_testing() -> None:
     conn.commit()
     conn.close()
     _init_done = False
-    if DB_PATH.exists():
-        DB_PATH.unlink()
-        logger.info("[reset_database_for_testing] deleted %s", resolved)
+    if db_path.exists():
+        try:
+            db_path.unlink()
+            logger.info("[reset_database_for_testing] deleted %s", resolved)
+        except OSError:
+            pass

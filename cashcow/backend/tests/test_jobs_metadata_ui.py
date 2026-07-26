@@ -11,7 +11,7 @@ def _read(relative: str) -> str:
 
 
 def test_completed_job_metadata_ui_has_loading_and_unavailable_states():
-    source = _read("app/jobs/page.tsx")
+    source = _read("app/(app)/jobs/page.tsx")
 
     assert 'initialJob.metadata_status === "generating"' in source
     assert 'initialJob.metadata_status === "unavailable"' in source
@@ -20,7 +20,7 @@ def test_completed_job_metadata_ui_has_loading_and_unavailable_states():
 
 
 def test_completed_job_metadata_ui_has_field_copy_controls():
-    source = _read("app/jobs/page.tsx")
+    source = _read("app/(app)/jobs/page.tsx")
 
     assert "metadataCopyText" in source
     assert "navigator.clipboard.writeText" in source
@@ -50,12 +50,11 @@ def test_job_api_exposes_youtube_upload_status_type():
 
 def test_jobs_ui_has_cancel_and_upload_retry_actions():
     api = _read("lib/api.ts")
-    page = _read("app/jobs/page.tsx")
+    page = _read("app/(app)/jobs/page.tsx")
 
     assert "cancelJob" in api
-    assert "retryYouTubeUpload" in api
+    assert "retryPublish" in api
     assert "/cancel" in api
     assert "/youtube/retry" in api
     assert "Stop" in page
-    assert "Retry Upload" in page
-    assert 'initialJob.status !== "upload_failed"' in page
+    assert "Retry Publish" in page

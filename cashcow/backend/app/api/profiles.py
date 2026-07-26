@@ -10,32 +10,50 @@ the client falls back to "Save As" (duplicate). Validation errors from the
 service map to 422, and unknown ids to 404.
 """
 
-from fastapi import APIRouter, HTTPException, status
+import logging
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
 from app.models.profile import Profile, ProfileInput, ProfileSummary
 from app.services import app_settings, destinations, profiles
 from app.services.presets import is_quality
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["profiles"])
+
+
+def _log_profile_request(request: Request | None, payload: ProfileInput, action: str) -> None:
+    headers = dict(request.headers) if request else {}
+    model_fields = list(ProfileInput.model_fields.keys())
+    dump = payload.model_dump(by_alias=True)
+    logger.info(
+        "[%s Profile] Request Headers: %s", action, headers
+    )
+    logger.info(
+        "[%s Profile] Parsed Request Body: %s", action, dump
+    )
+    logger.info(
+        "[%s Profile] Pydantic Model Fields: %s", action, model_fields
+    )
+    logger.info(
+        "[%s Profile] Alias Mapping: metadataPrompt -> metadata_prompt, exportQuality -> export_quality, allowedDestinationIds -> allowed_destination_ids",
+        action,
+    )
 
 
 def _validate_export_quality(data: ProfileInput) -> None:
     """Reject a profile whose export-quality default is not a known quality."""
     if data.export_quality is not None and not is_quality(data.export_quality):
+        logger.error("[Profile Validation] Unknown export quality: '%s'", data.export_quality)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Unknown export quality: '{data.export_quality}'",
         )
 
 
-def _validate_allowed_destinations(data: ProfileInput) -> None:
-    for destination_id in data.allowed_destination_ids:
-        if not destinations.destination_exists(destination_id):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Unknown destination: '{destination_id}'",
-            )
+def _validate_allowed_destinations(data: ProfileInput, profile_id: str = "custom") -> list[str]:
+    """Migrate allowed_destination_ids to valid existing OAuth destinations and return warnings."""
+    return profiles.migrate_input_destinations(data, profile_id=profile_id)
 
 
 @router.get("/profiles", response_model=list[ProfileSummary])
@@ -54,24 +72,36 @@ def get_profile(profile_id: str) -> Profile:
 
 
 @router.post("/profiles", response_model=Profile, status_code=status.HTTP_201_CREATED)
-def create_profile(payload: ProfileInput) -> Profile:
+def create_profile(payload: ProfileInput, request: Request = None) -> Profile:
     """Create a new custom profile and return it with its assigned id."""
+    _log_profile_request(request, payload, "POST")
     _validate_export_quality(payload)
-    _validate_allowed_destinations(payload)
-    return profiles.create_profile(payload)
+    warnings = _validate_allowed_destinations(payload, profile_id=payload.label or "new_profile")
+    created = profiles.create_profile(payload)
+    if warnings:
+        for w in warnings:
+            if w not in created.warnings:
+                created.warnings.append(w)
+    return created
 
 
 @router.put("/profiles/{profile_id}", response_model=Profile)
-def update_profile(profile_id: str, payload: ProfileInput) -> Profile:
+def update_profile(profile_id: str, payload: ProfileInput, request: Request = None) -> Profile:
     """Overwrite a custom profile.
 
     Returns 403 for a built-in (the client should "Save As" instead) and 404 if
     the custom profile does not exist.
     """
+    _log_profile_request(request, payload, f"PUT {profile_id}")
     _validate_export_quality(payload)
-    _validate_allowed_destinations(payload)
+    warnings = _validate_allowed_destinations(payload, profile_id=profile_id)
     try:
-        return profiles.update_profile(profile_id, payload)
+        updated = profiles.update_profile(profile_id, payload)
+        if warnings:
+            for w in warnings:
+                if w not in updated.warnings:
+                    updated.warnings.append(w)
+        return updated
     except profiles.ProfileReadOnlyError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except profiles.ProfileNotFoundError as exc:

@@ -19,6 +19,7 @@ from app.main import app
 from app import main as main_module
 from app.models.metadata import MetadataCreate, MetadataFields, MetadataUpdate
 from app.api import jobs as jobs_api
+from app.services import destinations as destinations_module
 from app.services import metadata as metadata_module
 from app.services.ai import gemini_provider
 from app.services.ai.gemini_provider import GeminiMetadataProvider
@@ -523,7 +524,15 @@ def test_workflow_auto_generates_metadata_after_success(monkeypatch):
         "upload_job",
         _fake_successful_upload,
     )
-
+    destinations_module.upsert_connected_channel(
+        channel_title="Auto Dest",
+        channel_id="UC-auto-123",
+        thumbnail="",
+        description="",
+        access_token="tok",
+        refresh_token="ref",
+        token_expires_at=None,
+    )
     job = job_store.create("https://youtube.example/watch?v=auto")
     try:
         workflow_module._execute(job.id, object(), object())

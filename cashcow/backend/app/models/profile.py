@@ -241,7 +241,11 @@ class ProfileInput(BaseModel):
     override per job.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    # Optional read-only metadata properties accepted when roundtripping GET payloads
+    id: str | None = None
+    builtin: bool | None = None
 
     label: str = Field(min_length=1)
     description: str = ""
@@ -249,11 +253,15 @@ class ProfileInput(BaseModel):
     audio: AudioConfig | None = None
     color: ColorConfig | None = None
     overlay: OverlayConfig | None = None
-    metadata_prompt: str = Field(default=DEFAULT_METADATA_PROMPT, min_length=1)
+    metadata_prompt: str = Field(
+        default=DEFAULT_METADATA_PROMPT, min_length=1, alias="metadataPrompt"
+    )
     # Validated against presets.is_quality() at the service layer, where the
     # quality catalogue lives; kept as a plain string here to avoid a cycle.
-    export_quality: str | None = None
-    allowed_destination_ids: list[str] = Field(default_factory=list)
+    export_quality: str | None = Field(default=None, alias="exportQuality")
+    allowed_destination_ids: list[str] = Field(
+        default_factory=list, alias="allowedDestinationIds"
+    )
 
 
 class Profile(ProfileInput):
@@ -262,6 +270,7 @@ class Profile(ProfileInput):
     id: str
     # True for bundled read-only profiles, False for user-created ones.
     builtin: bool
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ProfileSummary(BaseModel):

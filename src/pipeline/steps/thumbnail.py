@@ -3,10 +3,14 @@ from .base import PipelineStep
 
 class ThumbnailStep(PipelineStep):
     name = "thumbnail"
+
     @classmethod
     def validate(cls, options):
-        if "second" not in options and "timestamp" not in options: raise ValueError("thumbnail requires 'second' or 'timestamp'")
+        if "second" not in options and "timestamp" not in options:
+            raise ValueError("thumbnail requires 'second' or 'timestamp'")
+
     def execute(self, context, runner):
+        context.flush_render_plan(runner, step_name="render_thumbnail")
         output = context.next_output(self.name, ".jpg")
         options = dict(self.options)
         timestamp = options.pop("second", options.pop("timestamp", 0))

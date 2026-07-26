@@ -1,4 +1,4 @@
-label: YouTube Shorts (edited)
+label: Ramayani-alps-shorts
 description: 'Punchy vertical look: zoomed 9:16, boosted audio, vivid grade, and an
   overlay.'
 resize:
@@ -14,7 +14,7 @@ audio:
   - type: volume
     gain: 12.0
   - type: speed
-    factor: 1.0
+    factor: 1.03
 color:
   brightness: 0.05
   contrast: 1.15
@@ -24,5 +24,29 @@ color:
   temperature: 0.0
   tint: 0.0
   vibrance: 0.0
+overlay:
+  asset: yellow.jpg
+  x: center
+  y: center
+  scale: 1.0
+  opacity: 1.0
+  rotation: 0.0
+  layer: 0
+  color:
+    brightness: 0.08
+    contrast: 1.0
+    saturation: 1.4
+    gamma: 1.0
+    hue: 20.0
+    temperature: 0.0
+    tint: 0.0
+    vibrance: 0.0
+  mask:
+    type: ellipse
+    feather: 60.0
+    rotation: 0.0
+    invert: true
 metadata_prompt: Write a clear, searchable YouTube title and description with clean
   SEO, natural language, and accurate tags.
+export_quality: best
+allowed_destination_ids: []

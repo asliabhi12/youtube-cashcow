@@ -4,9 +4,12 @@ Central place for values that main.py and the API layer read, so those
 modules never carry hard-coded literals.
 """
 
+from dataclasses import dataclass
 import os
 from pathlib import Path
-from typing import Final
+from typing import Final, Optional
+
+from app.core.environment import Environment, get_current_environment
 
 # Application version, surfaced by the /health endpoint.
 VERSION: Final[str] = "0.1.0"
@@ -27,24 +30,10 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 class DownloaderConfig:
-    """Downloader hardening options, in one place.
+    """Downloader hardening options."""
 
-    Recent YouTube anti-bot changes require yt-dlp to authenticate with browser
-    cookies and run a remote challenge solver. These settings are applied
-    transparently to every yt-dlp call the backend makes (the job downloader and
-    the trim-slider metadata pre-fetch), so users never pass CLI flags.
-
-    Defaults match the flags YouTube currently expects
-    (``--cookies-from-browser chrome`` and ``--remote-components ejs:github``);
-    each is overridable by environment variable for deployments where, say, a
-    different browser holds the login or the challenge solver is disabled.
-    """
-
-    # Browser whose cookie store yt-dlp reads (chrome, firefox, edge, brave, …).
     BROWSER: Final[str] = os.getenv("CASHCOW_DL_BROWSER", "chrome")
-    # Whether to attach browser cookies at all.
     USE_BROWSER_COOKIES: Final[bool] = _env_bool("CASHCOW_DL_USE_BROWSER_COOKIES", True)
-    # Remote components to enable (comma-separated); "" disables them entirely.
     REMOTE_COMPONENTS: Final[list[str]] = [
         component.strip()
         for component in os.getenv("CASHCOW_DL_REMOTE_COMPONENTS", "ejs:github").split(",")
@@ -56,6 +45,22 @@ downloader_config = DownloaderConfig()
 
 
 DEFAULT_GEMINI_MODEL: Final[str] = "gemini-2.5-flash"
+
+# Generic AI / LLM Configuration
+AI_PROVIDER: Final[str] = (
+    os.getenv("AI_PROVIDER") or os.getenv("LLM_PROVIDER") or "openai-oauth"
+)
+AI_BASE_URL: Final[str] = (
+    os.getenv("AI_BASE_URL") or os.getenv("OPENAI_OAUTH_BASE_URL") or "http://127.0.0.1:10531/v1"
+)
+AI_MODEL: Final[str] = (
+    os.getenv("AI_MODEL") or os.getenv("GPT_MODEL") or "gpt-5.6-sol"
+)
+AI_ENABLED: Final[bool] = _env_bool("AI_ENABLED", True)
+
+# Backwards compatibility configuration names
+OPENAI_OAUTH_BASE_URL: Final[str] = AI_BASE_URL
+GPT_MODEL: Final[str] = AI_MODEL
 
 
 def get_config_value(name: str) -> str | None:
@@ -95,12 +100,7 @@ def _parse_dotenv_line(line: str) -> tuple[str | None, str]:
 
 
 class YouTubeUploadConfig:
-    """YouTube upload defaults and OAuth settings.
-
-    The default account is represented by OAuth client credentials plus a refresh
-    token. Keeping the account id explicit makes the service shape ready for
-    additional accounts later without adding user/account management now.
-    """
+    """YouTube upload defaults and OAuth settings."""
 
     ACCOUNT_ID: Final[str] = os.getenv("YOUTUBE_ACCOUNT_ID", "default")
     REDIRECT_URI: Final[str] = (
@@ -128,11 +128,6 @@ youtube_upload_config = YouTubeUploadConfig()
 
 
 def set_local_config_value(name: str, value: str) -> None:
-    """Persist one local secret/config value in the backend .env file.
-
-    This is intentionally small and only used for the MVP YouTube OAuth refresh
-    token. Environment variables still take precedence on reads.
-    """
     path = _dotenv_paths()[0]
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
@@ -149,3 +144,99 @@ def set_local_config_value(name: str, value: str) -> None:
 
 def _escape_dotenv_value(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+# --- Production-Grade Immutable AppConfig ---
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[4]
+
+
+@dataclass(frozen=True)
+class DatabaseConfig:
+    sqlite_path: Path
+    timeout: float = 5.0
+    wal_mode: bool = True
+
+
+@dataclass(frozen=True)
+class StorageConfig:
+    builtin_profiles_dir: Path
+    custom_profiles_dir: Path
+    settings_dir: Path
+    uploads_dir: Path
+    downloads_dir: Path
+    logs_dir: Path
+    temp_dir: Path
+
+
+@dataclass(frozen=True)
+class AppConfig:
+    env: Environment
+    db: DatabaseConfig
+    storage: StorageConfig
+    ai_provider: str = AI_PROVIDER
+    ai_base_url: str = AI_BASE_URL
+    ai_model: str = AI_MODEL
+    ai_enabled: bool = AI_ENABLED
+
+    @classmethod
+    def load(cls, env: Optional[Environment] = None, base_dir: Optional[Path] = None) -> "AppConfig":
+        active_env = env or get_current_environment()
+        root = base_dir or _PROJECT_ROOT
+
+        if active_env == Environment.TESTING and base_dir is not None:
+            db_path = base_dir / "test_cashcow.db"
+            custom_dir = base_dir / "profiles" / "custom"
+            settings_dir = base_dir
+            uploads_dir = base_dir / "uploads"
+            downloads_dir = base_dir / "downloads"
+            logs_dir = base_dir / "logs"
+            temp_dir = base_dir / "temp"
+        elif active_env == Environment.PRODUCTION:
+            db_path = root / "cashcow.db"
+            custom_dir = root / "profiles" / "custom"
+            settings_dir = root
+            uploads_dir = root / "uploads"
+            downloads_dir = root / "downloads"
+            logs_dir = root / "logs"
+            temp_dir = root / "temp"
+        else:
+            # Development environment default
+            db_path = root / "cashcow_dev.db"
+            custom_dir = root / "profiles" / "custom"
+            settings_dir = root
+            uploads_dir = root / "uploads"
+            downloads_dir = root / "downloads"
+            logs_dir = root / "logs"
+            temp_dir = root / "temp"
+
+        builtin_dir = _PROJECT_ROOT / "profiles"
+
+        return cls(
+            env=active_env,
+            db=DatabaseConfig(sqlite_path=db_path),
+            storage=StorageConfig(
+                builtin_profiles_dir=builtin_dir,
+                custom_profiles_dir=custom_dir,
+                settings_dir=settings_dir,
+                uploads_dir=uploads_dir,
+                downloads_dir=downloads_dir,
+                logs_dir=logs_dir,
+                temp_dir=temp_dir,
+            ),
+        )
+
+
+_global_config: Optional[AppConfig] = None
+
+
+def get_app_config() -> AppConfig:
+    global _global_config
+    if _global_config is None:
+        _global_config = AppConfig.load()
+    return _global_config
+
+
+def set_app_config(config: Optional[AppConfig]) -> None:
+    global _global_config
+    _global_config = config

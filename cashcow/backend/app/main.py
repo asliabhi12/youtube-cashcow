@@ -42,8 +42,20 @@ def validate_metadata_configuration() -> None:
         )
 
 
+from app.infrastructure.database import DB_PATH, _get_connection, init_database
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    init_database()
+    conn = _get_connection()
+    count = conn.execute("SELECT COUNT(*) FROM destinations").fetchone()[0]
+    rows = [dict(r) for r in conn.execute("SELECT * FROM destinations").fetchall()]
+    conn.close()
+    logger.info("[Startup] Absolute SQLite database path: %s", DB_PATH.resolve())
+    logger.info("[Startup] Current destinations count: %d", count)
+    logger.info("[Startup] SELECT * FROM destinations: %s", rows)
+
     validate_metadata_configuration()
     unfinished = resume_unfinished_jobs()
     if unfinished:

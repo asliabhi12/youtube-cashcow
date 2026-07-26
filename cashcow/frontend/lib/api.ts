@@ -299,6 +299,8 @@ export interface Profile extends ProfileInput {
   id: string;
   /** True for bundled read-only profiles; false for user-created ones. */
   builtin: boolean;
+  /** Migration or deprecation warnings returned by backend. */
+  warnings?: string[];
 }
 
 /** Lightweight profile entry for the selector list. */

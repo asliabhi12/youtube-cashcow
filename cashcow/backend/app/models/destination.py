@@ -30,6 +30,8 @@ class UploadSettings(BaseModel):
 class Destination(BaseModel):
     """A connected YouTube channel, without OAuth secrets."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str
     name: str
     channel_title: str = Field(alias="channelTitle")
@@ -46,6 +48,8 @@ class Destination(BaseModel):
 
 class JobDestination(BaseModel):
     """A destination snapshot attached to a job with independent publish status."""
+
+    model_config = ConfigDict(populate_by_name=True)
 
     id: str
     destination_id: str = Field(alias="destinationId")

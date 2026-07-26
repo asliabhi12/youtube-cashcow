@@ -48,12 +48,12 @@ def test_youtube_auth_start_redirects_to_google_with_upload_scope(monkeypatch):
     assert "state" in query
 
 
-def test_youtube_auth_callback_exchanges_code_and_stores_config(monkeypatch):
+def test_google_oauth_callback_creates_destination_and_redirects(monkeypatch):
     from app.services import destinations as dest_service
 
     stored = {}
     captured = {}
-    state = "known-state"
+    state = "known-state-google"
     dest_service.store_oauth_state(state)
     monkeypatch.setattr(youtube_oauth, "get_config_value", lambda name: f"{name}-value")
     monkeypatch.setattr(youtube_oauth, "set_local_config_value", lambda key, value: stored.update({key: value}))
@@ -62,7 +62,8 @@ def test_youtube_auth_callback_exchanges_code_and_stores_config(monkeypatch):
 
     def fake_urlopen(request, timeout):
         nonlocal token_response_calls
-        captured["body"] = request.data.decode("utf-8")
+        if request.data:
+            captured["body"] = request.data.decode("utf-8")
         captured["headers"] = dict(request.headers)
         assert timeout == youtube_oauth.REQUEST_TIMEOUT_SECONDS
         token_response_calls += 1
@@ -76,15 +77,14 @@ def test_youtube_auth_callback_exchanges_code_and_stores_config(monkeypatch):
                     "expires_in": 3600,
                 }
             )
-        # Second call is the channels API fetch
         return StubResponse(
             {
                 "items": [
                     {
-                        "id": "UC-test-channel-id",
+                        "id": "UC-test-channel-oauth",
                         "snippet": {
-                            "title": "Test Channel",
-                            "description": "A test channel",
+                            "title": "OAuth Test Channel",
+                            "description": "A test channel via OAuth",
                             "thumbnails": {"default": {"url": "https://example.com/thumb.jpg"}},
                         },
                     }
@@ -94,11 +94,67 @@ def test_youtube_auth_callback_exchanges_code_and_stores_config(monkeypatch):
 
     monkeypatch.setattr(youtube_oauth, "urlopen", fake_urlopen)
 
-    response = TestClient(app).get(f"/youtube/auth/callback?code=abc&state={state}")
+    response = TestClient(app).get(f"/oauth/google/callback?code=abc&state={state}", follow_redirects=False)
 
-    assert response.status_code == 200
-    assert response.json()["connected"] is True
+    assert response.status_code == 303
+    assert response.headers["location"] == "http://localhost:3000/destinations"
     assert stored.get("YOUTUBE_REFRESH_TOKEN") == "refresh-token"
-    body = parse_qs(captured["body"])
-    assert body["code"] == ["abc"]
-    assert body["grant_type"] == ["authorization_code"]
+
+    dests = dest_service.list_destinations()
+    assert any(d.channel_id == "UC-test-channel-oauth" for d in dests)
+
+
+def test_youtube_auth_callback_exchanges_code_and_stores_config(monkeypatch):
+    from app.services import destinations as dest_service
+
+    stored = {}
+    captured = {}
+    state = "known-state-legacy"
+    dest_service.store_oauth_state(state)
+    monkeypatch.setattr(youtube_oauth, "get_config_value", lambda name: f"{name}-value")
+    monkeypatch.setattr(youtube_oauth, "set_local_config_value", lambda key, value: stored.update({key: value}))
+
+    token_response_calls = 0
+
+    def fake_urlopen(request, timeout):
+        nonlocal token_response_calls
+        if request.data:
+            captured["body"] = request.data.decode("utf-8")
+        captured["headers"] = dict(request.headers)
+        assert timeout == youtube_oauth.REQUEST_TIMEOUT_SECONDS
+        token_response_calls += 1
+        if token_response_calls == 1:
+            return StubResponse(
+                {
+                    "access_token": "access-token",
+                    "refresh_token": "refresh-token",
+                    "scope": youtube_oauth.YOUTUBE_UPLOAD_SCOPE,
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                }
+            )
+        return StubResponse(
+            {
+                "items": [
+                    {
+                        "id": "UC-test-channel-legacy",
+                        "snippet": {
+                            "title": "Test Channel Legacy",
+                            "description": "A test channel legacy",
+                            "thumbnails": {"default": {"url": "https://example.com/thumb.jpg"}},
+                        },
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(youtube_oauth, "urlopen", fake_urlopen)
+
+    response = TestClient(app).get(f"/youtube/auth/callback?code=abc&state={state}", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "http://localhost:3000/destinations"
+    assert stored.get("YOUTUBE_REFRESH_TOKEN") == "refresh-token"
+
+    dests = dest_service.list_destinations()
+    assert any(d.channel_id == "UC-test-channel-legacy" for d in dests)
