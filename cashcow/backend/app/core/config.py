@@ -184,14 +184,15 @@ class AppConfig:
         active_env = env or get_current_environment()
         root = base_dir or _PROJECT_ROOT
 
-        if active_env == Environment.TESTING and base_dir is not None:
-            db_path = base_dir / "test_cashcow.db"
-            custom_dir = base_dir / "profiles" / "custom"
-            settings_dir = base_dir
-            uploads_dir = base_dir / "uploads"
-            downloads_dir = base_dir / "downloads"
-            logs_dir = base_dir / "logs"
-            temp_dir = base_dir / "temp"
+        if active_env == Environment.TESTING:
+            test_root = base_dir or root
+            db_path = test_root / "test_cashcow.db"
+            custom_dir = test_root / "profiles" / "custom"
+            settings_dir = test_root
+            uploads_dir = test_root / "uploads"
+            downloads_dir = test_root / "downloads"
+            logs_dir = test_root / "logs"
+            temp_dir = test_root / "temp"
         elif active_env == Environment.PRODUCTION:
             db_path = root / "cashcow.db"
             custom_dir = root / "profiles" / "custom"
