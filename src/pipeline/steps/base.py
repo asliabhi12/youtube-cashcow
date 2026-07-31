@@ -27,3 +27,8 @@ class PipelineStep(ABC):
         if context.current_file is None:
             raise ValueError(f"{self.name} requires media from a preceding step")
         return str(context.current_file)
+
+    def _check_step_retry(self, context: "PipelineContext", runner: "PipelineRunner") -> None:
+        """Flush render plan if step-level retry is configured so retries apply to this step."""
+        if self.options.get("retry") or (runner and hasattr(runner, "_attempts") and runner._attempts(self.options, 1) > 1):
+            context.flush_render_plan(runner, step_name=self.name)

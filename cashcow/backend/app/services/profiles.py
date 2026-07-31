@@ -38,11 +38,32 @@ from app.models.profile import Profile, ProfileInput, ProfileSummary
 
 logger = logging.getLogger(__name__)
 
-# Repository root, resolved like ``workflow.py`` / ``app_settings.py``:
-# services → app → backend → cashcow → repo root.
-_PROJECT_ROOT = Path(__file__).resolve().parents[4]
-BUILTIN_DIR = _PROJECT_ROOT / "profiles"
-CUSTOM_DIR = BUILTIN_DIR / "custom"
+from app.core.config import get_app_config
+
+def _get_builtin_dir() -> Path:
+    return get_app_config().storage.builtin_profiles_dir
+
+def _get_custom_dir() -> Path:
+    return get_app_config().storage.custom_profiles_dir
+
+class _DynamicDir:
+    def __init__(self, getter):
+        self._getter = getter
+    def __truediv__(self, other):
+        return self._getter() / other
+    def __str__(self):
+        return str(self._getter())
+    def __fspath__(self):
+        return str(self._getter())
+    def is_dir(self):
+        return self._getter().is_dir()
+    def glob(self, pattern):
+        return self._getter().glob(pattern)
+    def mkdir(self, *args, **kwargs):
+        return self._getter().mkdir(*args, **kwargs)
+
+BUILTIN_DIR = _DynamicDir(_get_builtin_dir)
+CUSTOM_DIR = _DynamicDir(_get_custom_dir)
 
 # Synthetic id kept for back-compat with the retired ``custom`` editing preset:
 # it names "no creative modifications" and always runs the bare pipeline. It has
@@ -228,7 +249,7 @@ def duplicate_profile(profile_id: str, *, label: str | None = None) -> Profile:
 def _write_custom(profile_id: str, data: ProfileInput) -> Profile:
     """Serialize ``data`` to ``CUSTOM_DIR/{id}.yaml`` atomically. Assumes lock held."""
     CUSTOM_DIR.mkdir(parents=True, exist_ok=True)
-    payload = data.model_dump(exclude_none=True)
+    payload = data.model_dump(exclude_none=True, exclude={"id", "builtin"})
     text = yaml.safe_dump(payload, sort_keys=False, default_flow_style=False, allow_unicode=True)
 
     target = CUSTOM_DIR / f"{profile_id}.yaml"
@@ -244,7 +265,9 @@ def _write_custom(profile_id: str, data: ProfileInput) -> Profile:
             pass
         raise
 
-    return Profile(id=profile_id, builtin=False, **data.model_dump())
+    fields = data.model_dump(exclude={"id", "builtin", "warnings"})
+    profile = Profile(id=profile_id, builtin=False, **fields)
+    return migrate_profile_destinations(profile, save_to_disk=False)
 
 
 def _input_fields(profile: Profile) -> dict[str, Any]:
@@ -276,7 +299,85 @@ def _load_file(path: Path, *, builtin: bool) -> Profile | None:
     except (OSError, yaml.YAMLError, ValidationError) as exc:
         logger.warning("Skipping unreadable profile '%s': %s", path.name, exc)
         return None
-    return Profile(id=path.stem, builtin=builtin, **data.model_dump())
+    fields = data.model_dump(exclude={"id", "builtin", "warnings"})
+    profile = Profile(id=path.stem, builtin=builtin, **fields)
+    return migrate_profile_destinations(profile, save_to_disk=False)
+
+
+def migrate_input_destinations(data: ProfileInput | Profile, profile_id: str = "custom") -> list[str]:
+    """Detect and remove legacy destination IDs from a ProfileInput or Profile.
+
+    Logs migration message in exact required format:
+        Migrated profile '<id>':
+        Removed legacy destination IDs:
+        - <id1>
+        - <id2>
+
+    Returns a list of warning strings if migration occurred.
+    """
+    if not data.allowed_destination_ids:
+        return []
+
+    from app.services import destinations as dest_service
+
+    valid_ids: list[str] = []
+    removed_ids: list[str] = []
+
+    for d_id in data.allowed_destination_ids:
+        if dest_service.destination_exists(d_id):
+            valid_ids.append(d_id)
+        else:
+            removed_ids.append(d_id)
+
+    if not removed_ids:
+        return []
+
+    log_lines = [f"Migrated profile '{profile_id}':", "Removed legacy destination IDs:"]
+    for r_id in sorted(removed_ids):
+        log_lines.append(f"- {r_id}")
+    logger.info("\n".join(log_lines))
+
+    data.allowed_destination_ids = valid_ids
+    return ["Removed legacy destination references. Please select your connected YouTube channels."]
+
+
+def migrate_profile_destinations(profile: Profile, *, save_to_disk: bool = True) -> Profile:
+    """Migrate legacy destination IDs from a profile to the OAuth architecture.
+
+    Detects and strips destination IDs that do not exist in SQLite OAuth destinations.
+    Logs migration once and appends a user warning. Rewrites custom profiles to disk.
+    """
+    warnings = migrate_input_destinations(profile, profile_id=profile.id)
+    if warnings:
+        for w in warnings:
+            if w not in profile.warnings:
+                profile.warnings.append(w)
+        if save_to_disk and not profile.builtin and profile.id != CUSTOM_ID:
+            try:
+                _save_migrated_custom_profile(profile)
+            except Exception as exc:
+                logger.error("Failed to save migrated profile '%s' to disk: %s", profile.id, exc)
+
+    return profile
+
+
+def _save_migrated_custom_profile(profile: Profile) -> None:
+    path = CUSTOM_DIR / f"{profile.id}.yaml"
+    if path.is_file():
+        data = ProfileInput(**profile.model_dump(exclude={"id", "builtin", "warnings"}))
+        payload = data.model_dump(exclude_none=True, exclude={"id", "builtin", "warnings"})
+        text = yaml.safe_dump(payload, sort_keys=False, default_flow_style=False, allow_unicode=True)
+        fd, tmp_path = tempfile.mkstemp(dir=str(CUSTOM_DIR), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(text)
+            os.replace(tmp_path, path)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
 
 def _builtin_path(profile_id: str) -> Path | None:

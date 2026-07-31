@@ -13,14 +13,13 @@ def _read(relative: str) -> str:
 def test_home_workflow_form_renders_title_seed_below_url_field():
     source = _read("features/workflow-form/workflow-form.tsx")
 
-    url_index = source.index('htmlFor="youtube-url"')
+    url_index = source.index('htmlFor="source-url"')
     seed_index = source.index('htmlFor="title-seed"')
-    trim_index = source.index("{/* Trim */}")
 
-    assert url_index < seed_index < trim_index
+    assert url_index < seed_index
     assert "Title Seed" in source
     assert "e.g. Epic Ride Through Mumbai" in source
-    assert "This is the starting idea for the AI-generated YouTube title." in source
+    assert "This is the starting idea for generated publishing metadata." in source
 
 
 def test_home_workflow_form_sends_title_seed_in_create_job_request():

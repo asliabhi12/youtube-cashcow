@@ -131,6 +131,13 @@ export function ProfileEditor({ editor, qualities, disabled = false }: ProfileEd
 
   return (
     <div className="flex flex-col gap-3">
+      {editor.warnings && editor.warnings.length > 0 && (
+        <div className="rounded-lg border border-warning-border bg-warning-surface p-3 text-xs text-warning-foreground">
+          {editor.warnings.map((w, idx) => (
+            <p key={idx}>{w}</p>
+          ))}
+        </div>
+      )}
       <EditorSection
         title="General"
         open={open.has("general")}

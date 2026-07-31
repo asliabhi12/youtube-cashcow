@@ -2,20 +2,12 @@ from pydantic import ValidationError
 
 from src.processor.audio import effect_chain
 from src.processor.models import AudioEffectConfig
+from src.processor.planner.operations import AudioOperation
 
 from .base import PipelineStep
 
 
 class AudioEffectStep(PipelineStep):
-    """Apply one audio effect or a chain of them to the current media.
-
-    Accepts both workflow shapes (a single inline ``{type: ...}`` effect or an
-    explicit ``{effects: [...]}`` chain); :class:`AudioEffectConfig` normalises
-    them. When every effect resolves to a no-op (an all-identity chain) the step
-    skips FFmpeg entirely and leaves the media untouched, so no wasted encode is
-    emitted. All FFmpeg work happens downstream through the Processor.
-    """
-
     name = "audio_effect"
 
     @classmethod
@@ -28,8 +20,11 @@ class AudioEffectStep(PipelineStep):
     def execute(self, context, runner):
         config = AudioEffectConfig(**self.options)
         if not effect_chain(config):
-            return context  # identity chain: nothing to do, keep current_file.
-        output = context.next_output(self.name)
-        runner.processor.apply_audio_effect(self.input_file(context), str(output), config)
-        context.current_file = output
+            return context  # identity chain: nothing to do
+        effects_list = [e.model_dump() for e in config.effects] if config.effects else []
+        op = AudioOperation(
+            effects=effects_list,
+            raw_config=config,
+        )
+        context.render_plan.add(op)
         return context

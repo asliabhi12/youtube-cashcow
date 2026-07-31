@@ -73,3 +73,9 @@ class Processor:
     def apply_color_effect(self, input_file: str, output_file: str, config: ColorEffectConfig | dict, **kwargs) -> ProcessingResult:
         color_config = config if isinstance(config, ColorEffectConfig) else ColorEffectConfig(**config)
         return color.apply_color(self.runner, input_file, output_file, color_config, encode=self._encode(), **kwargs)
+
+    def execute_plan(self, plan, input_file, output_file):
+        from pathlib import Path
+        from src.processor.planner import MediaExecutor
+        return MediaExecutor(self.settings, self).execute_plan(plan, Path(input_file), Path(output_file))
+

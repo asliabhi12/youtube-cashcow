@@ -19,6 +19,7 @@ from app.api.metadata import router as metadata_router
 from app.api.presets import router as presets_router
 from app.api.profiles import router as profiles_router
 from app.api.videos import router as videos_router
+from app.api.oauth import router as oauth_router
 from app.api.youtube import router as youtube_router
 from app.core.config import CORS_ORIGINS, VERSION
 from app.services.ai.provider_factory import (
@@ -41,8 +42,20 @@ def validate_metadata_configuration() -> None:
         )
 
 
+from app.infrastructure.database import DB_PATH, _get_connection, init_database
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    init_database()
+    conn = _get_connection()
+    count = conn.execute("SELECT COUNT(*) FROM destinations").fetchone()[0]
+    rows = [dict(r) for r in conn.execute("SELECT * FROM destinations").fetchall()]
+    conn.close()
+    logger.info("[Startup] Absolute SQLite database path: %s", DB_PATH.resolve())
+    logger.info("[Startup] Current destinations count: %d", count)
+    logger.info("[Startup] SELECT * FROM destinations: %s", rows)
+
     validate_metadata_configuration()
     unfinished = resume_unfinished_jobs()
     if unfinished:
@@ -68,4 +81,5 @@ app.include_router(metadata_router)
 app.include_router(presets_router)
 app.include_router(profiles_router)
 app.include_router(videos_router)
+app.include_router(oauth_router)
 app.include_router(youtube_router)

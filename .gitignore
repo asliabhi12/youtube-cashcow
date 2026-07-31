@@ -142,3 +142,6 @@ cashcow.db
 *.db-wal
 *.db-shm
 *.db-journal
+
+# Backups
+.cashcow_backups/

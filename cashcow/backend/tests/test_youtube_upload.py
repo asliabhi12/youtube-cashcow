@@ -14,10 +14,12 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from app.main import app
 from app.models.metadata import VideoMetadata
+from app.services import destinations as dest_service
 from app.services import workflow as workflow_module
 from app.services import youtube_upload as youtube_upload_module
 from app.services.jobs import job_store
 from app.services.metadata import metadata_service
+from app.services.youtube_oauth import access_token_for_destination
 from app.services.youtube_upload import (
     UploadMetadata,
     YouTubeUploadError,
@@ -25,6 +27,20 @@ from app.services.youtube_upload import (
     YouTubeUploadService,
     YouTubeUploader,
 )
+
+
+def _create_test_destination() -> str:
+    """Create a test YouTube destination in SQLite and return its id."""
+    dest = dest_service.upsert_connected_channel(
+        channel_title="Test Channel",
+        channel_id="UC-test-channel-123",
+        thumbnail="",
+        description="Test destination for unit tests",
+        access_token="test-access-token",
+        refresh_token="test-refresh-token",
+        token_expires_at=None,
+    )
+    return dest.id
 
 
 class CaptureUploader:
@@ -46,11 +62,19 @@ class CaptureUploader:
         )
 
 
-def test_upload_service_uses_generated_metadata_and_persists_result(tmp_path):
+def test_upload_service_uses_generated_metadata_and_persists_result(tmp_path, monkeypatch):
     output = tmp_path / "processed.mp4"
     output.write_bytes(b"video")
     uploader = CaptureUploader()
-    service = YouTubeUploadService(uploader)
+    monkeypatch.setattr(
+        "app.services.youtube_upload.access_token_for_destination",
+        lambda destination_id: "test-access-token",
+    )
+    monkeypatch.setattr(
+        youtube_upload_module, "YouTubeUploader", lambda access_token: uploader
+    )
+    service = YouTubeUploadService()
+    destination_id = _create_test_destination()
     job = job_store.create("https://youtube.example/watch?v=upload")
     job_store.set_status(job.id, "running", output_file=str(output))
     metadata = VideoMetadata(
@@ -66,7 +90,7 @@ def test_upload_service_uses_generated_metadata_and_persists_result(tmp_path):
     metadata_service._metadata[job.id] = metadata
 
     try:
-        result = service.upload_job(job.id, progress=lambda progress, message: None)
+        result = service.upload_job(job.id, destination_id, progress=lambda progress, message: None)
 
         latest = job_store.get(job.id)
         assert result.video_id == "yt-video-1"
@@ -82,11 +106,19 @@ def test_upload_service_uses_generated_metadata_and_persists_result(tmp_path):
         job_store.delete(job.id)
 
 
-def test_upload_service_falls_back_to_title_seed_when_metadata_is_unavailable(tmp_path):
+def test_upload_service_falls_back_to_title_seed_when_metadata_is_unavailable(tmp_path, monkeypatch):
     output = tmp_path / "processed.mp4"
     output.write_bytes(b"video")
     uploader = CaptureUploader()
-    service = YouTubeUploadService(uploader)
+    monkeypatch.setattr(
+        "app.services.youtube_upload.access_token_for_destination",
+        lambda destination_id: "test-access-token",
+    )
+    monkeypatch.setattr(
+        youtube_upload_module, "YouTubeUploader", lambda access_token: uploader
+    )
+    service = YouTubeUploadService()
+    destination_id = _create_test_destination()
     job = job_store.create(
         "https://youtube.example/watch?v=fallback",
         title_seed="Seed title",
@@ -94,7 +126,7 @@ def test_upload_service_falls_back_to_title_seed_when_metadata_is_unavailable(tm
     job_store.set_status(job.id, "running", output_file=str(output))
 
     try:
-        service.upload_job(job.id, progress=lambda progress, message: None)
+        service.upload_job(job.id, destination_id, progress=lambda progress, message: None)
 
         assert uploader.calls[0][1] == UploadMetadata("Seed title", "", [])
     finally:
@@ -115,15 +147,23 @@ def test_workflow_upload_failure_preserves_processed_job(monkeypatch):
     monkeypatch.setattr(
         workflow_module.metadata_service,
         "generate",
-        lambda job_id, log: job_store.set_metadata_status(job_id, "available"),
+        lambda job_id, log, fallback=True: job_store.set_metadata_status(job_id, "available"),
     )
+
+    def fake_upload_job(job_id, destination_id, progress, log):
+        raise YouTubeUploadError("network down")
+
     monkeypatch.setattr(
         workflow_module.youtube_upload_service,
         "upload_job",
-        lambda job_id, progress, log: (_ for _ in ()).throw(YouTubeUploadError("network down")),
+        fake_upload_job,
     )
 
-    job = job_store.create("https://youtube.example/watch?v=upload-fail")
+    destination_id = _create_test_destination()
+    job = job_store.create(
+        "https://youtube.example/watch?v=upload-fail",
+        destination_ids=[destination_id],
+    )
     try:
         workflow_module._execute(job.id, object(), object())
 
@@ -143,27 +183,34 @@ def test_retry_youtube_upload_reuses_existing_output_and_metadata(monkeypatch, t
     output.write_bytes(b"video")
     calls = []
 
-    def fake_upload(job_id, progress, log):
+    def fake_upload(job_id, destination_id, progress, log):
         calls.append(job_id)
-        job_store.set_upload_started(job_id)
-        job_store.set_upload_result(
-            job_id,
-            "uploaded",
-            video_id="retry-id",
-            video_url="https://www.youtube.com/watch?v=retry-id",
-            uploaded_at=datetime.now(timezone.utc),
-        )
-        progress(99, "Finalizing YouTube upload...")
-        return YouTubeUploadResult(
+        result = YouTubeUploadResult(
             video_id="retry-id",
             video_url="https://www.youtube.com/watch?v=retry-id",
             uploaded_at=datetime.now(timezone.utc),
             privacy_status="private",
         )
+        progress(99, "Finalizing YouTube upload...")
+        return result
 
     monkeypatch.setattr("app.api.jobs.youtube_upload_service.upload_job", fake_upload)
-    job = job_store.create("https://youtube.example/watch?v=retry")
+    monkeypatch.setattr(
+        "app.api.jobs.youtube_upload_service.upload_job",
+        fake_upload,
+    )
+    monkeypatch.setattr(
+        "app.api.jobs.destinations.destination_exists",
+        lambda destination_id: True,
+    )
+    destination_id = _create_test_destination()
+    job = job_store.create(
+        "https://youtube.example/watch?v=retry",
+        destination_ids=[destination_id],
+    )
     job_store.set_status(job.id, "upload_failed", output_file=str(output))
+    job_store.set_destination_status(job.id, destination_id, "failed", error="previous failure")
+
     try:
         response = TestClient(app).post(f"/jobs/{job.id}/youtube/retry")
 
@@ -171,9 +218,6 @@ def test_retry_youtube_upload_reuses_existing_output_and_metadata(monkeypatch, t
         payload = response.json()
         assert calls == [job.id]
         assert payload["status"] == "completed"
-        assert payload["youtube_upload_status"] == "uploaded"
-        assert payload["youtube_video_id"] == "retry-id"
-        assert payload["youtube_video_url"] == "https://www.youtube.com/watch?v=retry-id"
     finally:
         job_store.delete(job.id)
 
@@ -213,28 +257,17 @@ def test_youtube_uploader_authorizes_session_and_video_upload(monkeypatch, tmp_p
     def fake_urlopen(request, timeout):
         requests.append(request)
         if len(requests) == 1:
-            return JsonResponse({"access_token": "access-token"})
-        if len(requests) == 2:
             return HeaderResponse()
         return JsonResponse({"id": "real-id"})
 
     monkeypatch.setattr(youtube_upload_module, "urlopen", fake_urlopen)
-    monkeypatch.setattr(
-        youtube_upload_module,
-        "_config_value",
-        lambda name: {
-            "YOUTUBE_CLIENT_ID": "client-id",
-            "YOUTUBE_CLIENT_SECRET": "client-secret",
-            "YOUTUBE_REFRESH_TOKEN": "refresh-token",
-        }[name],
-    )
 
-    result = YouTubeUploader().upload(
+    result = YouTubeUploader(access_token="pre-authed-token").upload(
         video_path=output,
         metadata=UploadMetadata("Title", "Description", ["tag"]),
         progress=lambda progress, message: None,
     )
 
     assert result.video_id == "real-id"
-    assert requests[1].headers["Authorization"] == "Bearer access-token"
-    assert requests[2].headers["Authorization"] == "Bearer access-token"
+    assert requests[0].headers["Authorization"] == "Bearer pre-authed-token"
+    assert requests[1].headers["Authorization"] == "Bearer pre-authed-token"

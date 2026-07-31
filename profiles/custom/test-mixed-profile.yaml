@@ -1,0 +1,5 @@
+label: Test Mixed Profile
+description: Test profile with mixed destination IDs
+metadata_prompt: Write a clear, searchable YouTube title and description with clean
+  SEO, natural language, and accurate tags.
+allowed_destination_ids: []

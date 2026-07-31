@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from app.models.job import Job, JobCreate, JobLogEntry, JobProgress
 from app.services import app_settings, profiles
+from app.models.destination import JobDestinationStatus
 from app.services import destinations
 from app.services.job_logs import CLOSE, job_log_hub
 from app.services.jobs import job_store
@@ -186,7 +187,11 @@ def cancel_job(job_id: str) -> Job:
 
 @router.post("/{job_id}/youtube/retry", response_model=Job)
 def retry_youtube_upload(job_id: str) -> Job:
-    """Retry only the final YouTube upload stage for a processed job."""
+    """Retry only failed destinations for a processed job.
+
+    Successful uploads are never duplicated — only destinations whose status
+    is ``failed`` or ``skipped`` are retried.
+    """
     job = job_store.get(job_id)
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
@@ -196,24 +201,37 @@ def retry_youtube_upload(job_id: str) -> Job:
             detail="Job has no processed output to upload",
         )
 
+    failed_destinations = [
+        d for d in job.destinations
+        if d.status in ("failed", "skipped")
+    ]
+    if not failed_destinations:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No failed destinations to retry",
+        )
+
     job_store.clear_cancel_request(job_id)
     job_store.set_status(job_id, "running")
-    try:
-        youtube_upload_service.upload_job(
-            job_id,
-            progress=lambda progress, message: _publish_progress(job_id, progress, message),
-            log=lambda level, message: job_log_hub.append(job_id, level, message),
-        )
-    except YouTubeUploadError as exc:
+    failures = 0
+    for dest in failed_destinations:
+        try:
+            youtube_upload_service.upload_job(
+                job_id,
+                dest.destination_id,
+                progress=lambda progress, message: _publish_progress(job_id, progress, message),
+                log=lambda level, message: job_log_hub.append(job_id, level, message),
+            )
+        except YouTubeUploadError:
+            failures += 1
+
+    if failures:
         job_store.set_status(job_id, "upload_failed")
         _publish_progress(job_id, *job_progress.UPLOAD_FAILED)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
+    else:
+        job_store.set_status(job_id, "completed")
+        _publish_progress(job_id, *job_progress.UPLOAD_COMPLETE)
 
-    job_store.set_status(job_id, "completed")
-    _publish_progress(job_id, *job_progress.UPLOAD_COMPLETE)
     latest = job_store.get(job_id)
     if latest is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")

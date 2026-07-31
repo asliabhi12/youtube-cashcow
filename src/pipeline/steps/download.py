@@ -16,5 +16,10 @@ class DownloadStep(PipelineStep):
         if not result.success or not result.file_path:
             raise RuntimeError(result.error or "Downloader returned no media file")
         context.current_file = context.resolve_path(result.file_path)
-        context.metadata["download"] = result.model_dump()
+        if hasattr(result, "model_dump"):
+            context.metadata["download"] = result.model_dump()
+        elif hasattr(result, "__dict__"):
+            context.metadata["download"] = result.__dict__
+        else:
+            context.metadata["download"] = {}
         return context

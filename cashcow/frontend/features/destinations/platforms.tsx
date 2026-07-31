@@ -5,11 +5,7 @@ import {
   CircleAlert,
   CircleDashed,
   Clock3,
-  Facebook,
-  Globe2,
-  Linkedin,
   Play,
-  Twitter,
   type LucideIcon,
 } from "lucide-react";
 
@@ -23,29 +19,12 @@ import { cn } from "@/lib/utils";
 
 export const PLATFORM_LABELS: Record<DestinationPlatform, string> = {
   youtube: "YouTube",
-  tiktok: "TikTok",
-  instagram: "Instagram",
-  facebook: "Facebook",
-  linkedin: "LinkedIn",
-  x: "X",
 };
 
-export const PLATFORM_OPTIONS: DestinationPlatform[] = [
-  "youtube",
-  "tiktok",
-  "instagram",
-  "facebook",
-  "linkedin",
-  "x",
-];
+export const PLATFORM_OPTIONS: DestinationPlatform[] = ["youtube"];
 
 const PLATFORM_ICONS: Record<DestinationPlatform, LucideIcon> = {
   youtube: Play,
-  tiktok: Globe2,
-  instagram: Globe2,
-  facebook: Facebook,
-  linkedin: Linkedin,
-  x: Twitter,
 };
 
 export function PlatformIcon({
@@ -70,8 +49,8 @@ export function PlatformBadge({ platform }: { platform: DestinationPlatform }) {
 
 const DESTINATION_STATUS_STYLES: Record<DestinationStatus, string> = {
   connected: "border-success-border bg-success-surface text-success-foreground",
+  needs_reconnection: "border-warning-border bg-warning-surface text-warning-foreground",
   disconnected: "border-muted-foreground/25 bg-background/60 text-muted-foreground",
-  expired: "border-warning-border bg-warning-surface text-warning-foreground",
   error: "border-danger-border bg-danger-surface text-danger-foreground",
 };
 
@@ -130,4 +109,3 @@ export function destinationInitials(destination: Pick<Destination, "name" | "thu
     .slice(0, 2)
     .toUpperCase();
 }
-

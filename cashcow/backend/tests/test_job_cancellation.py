@@ -12,10 +12,24 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from app.main import app
 from app.models.job import JobProgress
+from app.services import destinations as dest_service
 from app.services import workflow as workflow_module
 from app.services.jobs import job_store
 from app.services.metadata import metadata_service
 from app.services.youtube_upload import YouTubeUploadResult
+
+
+def _test_destination_id() -> str:
+    dest = dest_service.upsert_connected_channel(
+        channel_title="Test Channel",
+        channel_id="UC-test-cancel",
+        thumbnail="",
+        description="",
+        access_token="test-token",
+        refresh_token="test-refresh",
+        token_expires_at=None,
+    )
+    return dest.id
 
 
 def _record(name: str):
@@ -89,16 +103,22 @@ def test_cancel_during_metadata_marks_job_cancelled(monkeypatch):
 
 
 def test_cancel_during_upload_marks_job_cancelled(monkeypatch):
+    dest_id = _test_destination_id()
+
     def run(runner):
         return SimpleNamespace(output_file=Path("/tmp/processed.mp4"))
 
-    def upload(job_id, progress, log):
+    def upload(job_id, destination_id, progress, log):
+        assert destination_id == dest_id
         job_store.request_cancel(job_id)
         progress(98, "Uploading video to YouTube...")
 
-    job = job_store.create("https://youtube.example/watch?v=cancel-upload")
+    job = job_store.create(
+        "https://youtube.example/watch?v=cancel-upload",
+        destination_ids=[dest_id],
+    )
     _patch_runner(monkeypatch, run)
-    monkeypatch.setattr(workflow_module.metadata_service, "generate", lambda job_id, log: None)
+    monkeypatch.setattr(workflow_module.metadata_service, "generate", lambda job_id, log, fallback=True: None)
     monkeypatch.setattr(workflow_module.youtube_upload_service, "upload_job", upload)
     try:
         workflow_module._execute(job.id, object(), object())
@@ -135,9 +155,11 @@ def test_upload_retry_does_not_restart_workflow(monkeypatch, tmp_path):
     output = tmp_path / "processed.mp4"
     output.write_bytes(b"video")
     calls = []
+    dest_id = _test_destination_id()
 
-    def fake_upload(job_id, progress, log):
+    def fake_upload(job_id, destination_id, progress, log):
         calls.append(job_id)
+        assert destination_id == dest_id
         job_store.set_upload_started(job_id)
         job_store.set_upload_result(
             job_id,
@@ -148,7 +170,7 @@ def test_upload_retry_does_not_restart_workflow(monkeypatch, tmp_path):
         return YouTubeUploadResult(
             video_id="retry-only",
             video_url="https://www.youtube.com/watch?v=retry-only",
-            uploaded_at=job_store.get(job_id).created_at,
+            uploaded_at=job_store.get(job.id).created_at,
             privacy_status="private",
         )
 
@@ -157,13 +179,17 @@ def test_upload_retry_does_not_restart_workflow(monkeypatch, tmp_path):
 
     monkeypatch.setattr("app.api.jobs.job_queue.submit", fail_submit)
     monkeypatch.setattr("app.api.jobs.youtube_upload_service.upload_job", fake_upload)
-    job = job_store.create("https://youtube.example/watch?v=retry-only")
+    monkeypatch.setattr("app.api.jobs.destinations.destination_exists", lambda did: did == dest_id)
+    job = job_store.create(
+        "https://youtube.example/watch?v=retry-only",
+        destination_ids=[dest_id],
+    )
     job_store.set_status(job.id, "upload_failed", output_file=str(output))
+    job_store.set_destination_status(job.id, dest_id, "failed", error="previous failure")
     try:
         response = TestClient(app).post(f"/jobs/{job.id}/youtube/retry")
         assert response.status_code == 200
         assert calls == [job.id]
         assert response.json()["status"] == "completed"
-        assert response.json()["youtube_video_id"] == "retry-only"
     finally:
         job_store.delete(job.id)

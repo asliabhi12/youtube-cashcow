@@ -112,6 +112,8 @@ export interface ProfileEditorState {
   saving: boolean;
   loading: boolean;
   error: string | null;
+  /** Non-blocking migration/deprecation warnings returned by backend. */
+  warnings: string[];
   /** Structural problems that would fail a save (empty until a save is tried). */
   issues: ValidationIssue[];
 
@@ -149,6 +151,7 @@ export function useProfileEditor(): ProfileEditorState {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
 
   // Baseline the draft is compared against for dirty tracking. Updated whenever
@@ -174,6 +177,7 @@ export function useProfileEditor(): ProfileEditorState {
     async (id: string): Promise<void> => {
       setLoading(true);
       setError(null);
+      setWarnings([]);
       setIssues([]);
       try {
         const profile = await fetchProfile(id);
@@ -190,6 +194,7 @@ export function useProfileEditor(): ProfileEditorState {
         setDraft(next);
         setActiveId(profile.id);
         setIsBuiltin(profile.builtin);
+        setWarnings(profile.warnings ?? []);
         setBaseline(next);
       } catch {
         setError("Could not load the profile.");
@@ -205,6 +210,7 @@ export function useProfileEditor(): ProfileEditorState {
     setActiveId(null);
     setIsBuiltin(false);
     setError(null);
+    setWarnings([]);
     setIssues([]);
     setBaseline(EMPTY_DRAFT);
   }, [setBaseline]);
@@ -227,6 +233,7 @@ export function useProfileEditor(): ProfileEditorState {
           : await createProfile(input);
       setActiveId(saved.id);
       setIsBuiltin(false);
+      setWarnings(saved.warnings ?? []);
       setBaseline(draft);
       return saved.id;
     } catch {
@@ -252,6 +259,7 @@ export function useProfileEditor(): ProfileEditorState {
         setDraft(candidate);
         setActiveId(saved.id);
         setIsBuiltin(false);
+        setWarnings(saved.warnings ?? []);
         setBaseline(candidate);
         return saved.id;
       } catch {
@@ -290,6 +298,7 @@ export function useProfileEditor(): ProfileEditorState {
       saving,
       loading,
       error,
+      warnings,
       issues,
       update,
       loadProfile,
@@ -306,6 +315,7 @@ export function useProfileEditor(): ProfileEditorState {
       saving,
       loading,
       error,
+      warnings,
       issues,
       update,
       loadProfile,

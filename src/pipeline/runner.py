@@ -68,12 +68,15 @@ class PipelineRunner:
                 self._notify("step_started", context, record)
                 for attempt in range(1, attempts + 1):
                     try:
-                        self.registry.create(definition.name, options).execute(context, self)
+                        self.registry.create(definition.name, raw_options).execute(context, self)
                         record.status = "completed"
+
                         record.output_file = context.output_file or context.current_file
                         context.history.append(record)
                         self._notify("step_completed", context, record)
                         break
+
+
                     except Exception as exc:
                         if attempt == attempts:
                             record.status, record.detail = "failed", str(exc)
@@ -81,8 +84,10 @@ class PipelineRunner:
                             self._notify("step_failed", context, record)
                             raise PipelineStepError(definition.name, str(exc)) from exc
                         self.logger.warning("Retrying step '%s' (%s/%s): %s", definition.name, attempt, attempts, exc)
+            context.flush_render_plan(self)
             if not context.output_file: context.output_file = context.current_file
             result = PipelineResult(name=workflow.name, output_file=context.output_file, workspace=workspace, history=context.history)
+
             self._notify("pipeline_completed", context)
             if self.settings.pipeline.cleanup: shutil.rmtree(workspace, ignore_errors=True)
             return result

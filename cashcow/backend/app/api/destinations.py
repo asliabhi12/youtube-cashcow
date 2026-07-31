@@ -1,9 +1,11 @@
-"""Destination CRUD routes."""
+"""Destination CRUD routes plus OAuth connect flow."""
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.models.destination import Destination, DestinationInput
+from app.core.config import youtube_upload_config
+from app.models.destination import Destination
 from app.services import destinations
+from app.services.youtube_oauth import YouTubeOAuthError, authorization_url
 
 router = APIRouter(prefix="/destinations", tags=["destinations"])
 
@@ -13,17 +15,17 @@ def list_destinations() -> list[Destination]:
     return destinations.list_destinations()
 
 
-@router.post("", response_model=Destination, status_code=status.HTTP_201_CREATED)
-def create_destination(payload: DestinationInput) -> Destination:
-    return destinations.create_destination(payload)
-
-
-@router.put("/{destination_id}", response_model=Destination)
-def update_destination(destination_id: str, payload: DestinationInput) -> Destination:
+@router.post("/connect")
+def connect_destination() -> dict[str, str]:
+    """Return the Google OAuth authorization URL to connect a YouTube channel."""
     try:
-        return destinations.update_destination(destination_id, payload)
-    except destinations.DestinationNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Destination not found") from exc
+        auth_url = authorization_url()
+    except YouTubeOAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    return {"authorization_url": auth_url}
 
 
 @router.delete("/{destination_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -32,4 +34,3 @@ def delete_destination(destination_id: str) -> None:
         destinations.delete_destination(destination_id)
     except destinations.DestinationNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Destination not found") from exc
-
