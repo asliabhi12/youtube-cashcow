@@ -12,6 +12,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.main import app
+from app.core.config import youtube_upload_config
 from app.services import youtube_oauth
 
 
@@ -97,7 +98,7 @@ def test_google_oauth_callback_creates_destination_and_redirects(monkeypatch):
     response = TestClient(app).get(f"/oauth/google/callback?code=abc&state={state}", follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == "http://localhost:3000/destinations"
+    assert response.headers["location"] == youtube_upload_config.FRONTEND_DESTINATIONS_URL
     assert stored.get("YOUTUBE_REFRESH_TOKEN") == "refresh-token"
 
     dests = dest_service.list_destinations()
@@ -153,7 +154,7 @@ def test_youtube_auth_callback_exchanges_code_and_stores_config(monkeypatch):
     response = TestClient(app).get(f"/youtube/auth/callback?code=abc&state={state}", follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == "http://localhost:3000/destinations"
+    assert response.headers["location"] == youtube_upload_config.FRONTEND_DESTINATIONS_URL
     assert stored.get("YOUTUBE_REFRESH_TOKEN") == "refresh-token"
 
     dests = dest_service.list_destinations()
