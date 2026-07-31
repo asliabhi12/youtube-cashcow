@@ -11,17 +11,22 @@ from app.services.ai.openrouter_provider import OpenRouterMetadataProvider
 
 
 def get_metadata_provider(name: str | None = None) -> MetadataProvider:
+    
     """Return the configured production provider.
 
-    The default provider is determined by ``AI_PROVIDER`` or ``METADATA_PROVIDER``
-    (``"openai-oauth"``, ``"gemini"``, ``"openrouter"``, or ``"mock"``).
+    The default provider is determined by ``METADATA_PROVIDER`` or ``AI_PROVIDER``
+    (``"gemini"``, ``"openrouter"``, ``"openai-oauth"``, or ``"mock"``).
     """
     provider_name = (
         name
-        or os.getenv("AI_PROVIDER")
         or os.getenv("METADATA_PROVIDER")
+        or os.getenv("AI_PROVIDER")
+        or get_config_value("METADATA_PROVIDER")
+        or ("gemini" if get_config_value("GEMINI_API_KEY") else None)
         or get_app_config().ai_provider
-    ).strip().lower()
+    )
+    if provider_name:
+        provider_name = provider_name.strip().lower()
 
     if provider_name in {"openai-oauth", "openai_oauth", "openai"}:
         return OpenAIOAuthMetadataProvider()
@@ -37,10 +42,14 @@ def get_metadata_provider(name: str | None = None) -> MetadataProvider:
 def metadata_provider_name() -> str:
     """Human-readable active metadata provider name."""
     default = (
-        os.getenv("AI_PROVIDER")
-        or os.getenv("METADATA_PROVIDER")
+        os.getenv("METADATA_PROVIDER")
+        or os.getenv("AI_PROVIDER")
+        or get_config_value("METADATA_PROVIDER")
+        or ("gemini" if get_config_value("GEMINI_API_KEY") else None)
         or get_app_config().ai_provider
-    ).strip().lower()
+    )
+    if default:
+        default = default.strip().lower()
     names = {
         "openai-oauth": "OpenAI OAuth",
         "openai_oauth": "OpenAI OAuth",
@@ -48,16 +57,20 @@ def metadata_provider_name() -> str:
         "mock": "Mock",
         "openrouter": "OpenRouter",
     }
-    return names.get(default, default.capitalize())
+    return names.get(default, default.capitalize() if default else "Unknown")
 
 
 def metadata_generation_configured() -> bool:
     """Whether production AI metadata generation is configured."""
     provider = (
-        os.getenv("AI_PROVIDER")
-        or os.getenv("METADATA_PROVIDER")
+        os.getenv("METADATA_PROVIDER")
+        or os.getenv("AI_PROVIDER")
+        or get_config_value("METADATA_PROVIDER")
+        or ("gemini" if get_config_value("GEMINI_API_KEY") else None)
         or get_app_config().ai_provider
-    ).strip().lower()
+    )
+    if provider:
+        provider = provider.strip().lower()
     if provider in {"openai-oauth", "openai_oauth", "openai"}:
         return True
     if provider == "openrouter":

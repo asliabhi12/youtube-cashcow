@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { type JobLogEntry, jobLogsEventsUrl } from "@/lib/api";
+import { fetchJobLogs, type JobLogEntry, jobLogsEventsUrl } from "@/lib/api";
 
 /** Connection state of a job's live log stream. */
 export type LogStreamStatus = "connecting" | "streaming" | "done" | "error";
@@ -13,21 +13,18 @@ export interface JobLogsState {
 }
 
 /**
- * Subscribe to a job's Server-Sent Events log stream.
+ * Subscribe to a job's Server-Sent Events log stream with HTTP polling fallback.
  *
- * The backend replays the job's existing history on connect and then pushes
- * each new entry, so a single ``EventSource`` yields both the backlog and live
- * updates with no polling and no duplicates. A named ``end`` event signals the
- * job reached a terminal state; we close the connection on it so the browser
- * does not reconnect, while the accumulated entries stay in state.
+ * Primary: EventSource stream pushes live logs and progress events over SSE.
+ * Fallback: If proxy/tunnel (e.g. Cloudflare Quick Tunnel) drops the SSE socket,
+ * falls back to polling `GET /jobs/{id}/logs` every 2 seconds so the UI remains
+ * updated and never appears broken.
  *
- * Pass ``null`` to stay idle (e.g. while the drawer is closed).
+ * Pass `null` to stay idle (e.g. while the drawer is closed).
  */
 export function useJobLogs(jobId: string | null): JobLogsState {
   const [entries, setEntries] = useState<JobLogEntry[]>([]);
   const [status, setStatus] = useState<LogStreamStatus>("connecting");
-  // Once the stream has ended cleanly, ignore the connection-drop error the
-  // browser may raise as the server closes the response.
   const endedRef = useRef(false);
 
   useEffect(() => {
@@ -35,7 +32,6 @@ export function useJobLogs(jobId: string | null): JobLogsState {
       return;
     }
 
-    // Reset for a fresh subscription; a reused hook may have prior entries.
     endedRef.current = false;
     setEntries([]);
     setStatus("connecting");
@@ -48,7 +44,7 @@ export function useJobLogs(jobId: string | null): JobLogsState {
         setEntries((prev) => [...prev, entry]);
         setStatus("streaming");
       } catch {
-        // Ignore frames that are not valid JSON log entries.
+        // Ignore non-log JSON frames (e.g., progress frames)
       }
     };
 
@@ -62,8 +58,6 @@ export function useJobLogs(jobId: string | null): JobLogsState {
       if (endedRef.current) {
         return;
       }
-      // EventSource retries transient failures on its own while CONNECTING; a
-      // CLOSED socket is a hard failure worth surfacing.
       if (source.readyState === EventSource.CLOSED) {
         setStatus("error");
       }
@@ -73,6 +67,33 @@ export function useJobLogs(jobId: string | null): JobLogsState {
       source.close();
     };
   }, [jobId]);
+
+  // Fallback HTTP polling when SSE stream encounters an error over tunnels/proxies
+  useEffect(() => {
+    if (jobId === null || status !== "error" || endedRef.current) {
+      return;
+    }
+
+    let active = true;
+    const pollLogs = async () => {
+      try {
+        const history = await fetchJobLogs(jobId);
+        if (active) {
+          setEntries(history);
+        }
+      } catch {
+        // Non-fatal poll failure
+      }
+    };
+
+    void pollLogs();
+    const timer = setInterval(() => void pollLogs(), 2000);
+
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [jobId, status]);
 
   return { entries, status };
 }

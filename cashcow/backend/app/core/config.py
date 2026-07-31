@@ -14,11 +14,75 @@ from app.core.environment import Environment, get_current_environment
 # Application version, surfaced by the /health endpoint.
 VERSION: Final[str] = "0.1.0"
 
-# Origins allowed to call this API. The Next.js dev server runs on port 3000.
-CORS_ORIGINS: Final[list[str]] = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
+def get_config_value(name: str) -> str | None:
+    """Read an env var, falling back to local .env files."""
+    value = os.getenv(name)
+    if value:
+        return value
+    return _read_dotenv().get(name)
+
+
+def _read_dotenv() -> dict[str, str]:
+    values: dict[str, str] = {}
+    for path in _dotenv_paths():
+        if not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            key, value = _parse_dotenv_line(line)
+            if key and key not in values:
+                values[key] = value
+    return values
+
+
+def _dotenv_paths() -> list[Path]:
+    backend_root = Path(__file__).resolve().parents[2]
+    repo_root = Path(__file__).resolve().parents[4]
+    return [backend_root / ".env", repo_root / ".env"]
+
+
+def _parse_dotenv_line(line: str) -> tuple[str | None, str]:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        return None, ""
+    key, value = stripped.split("=", 1)
+    key = key.strip()
+    value = value.strip().strip('"').strip("'")
+    return (key or None), value
+
+
+def get_cors_origins() -> list[str]:
+    """Return the set of origins allowed to call the API via CORS.
+
+    Includes defaults (http://localhost:3000, http://127.0.0.1:3000), FRONTEND_URL,
+    and any custom comma-separated origins listed in CORS_ORIGINS.
+    """
+    origins: set[str] = {"http://localhost:3000", "http://127.0.0.1:3000"}
+
+    frontend_url = get_config_value("FRONTEND_URL")
+    if frontend_url:
+        origins.add(frontend_url.strip().rstrip("/"))
+
+    destinations_url = get_config_value("FRONTEND_DESTINATIONS_URL")
+    if destinations_url:
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(destinations_url)
+            if parsed.scheme and parsed.netloc:
+                origins.add(f"{parsed.scheme}://{parsed.netloc}")
+        except Exception:
+            pass
+
+    raw_origins = get_config_value("CORS_ORIGINS")
+    if raw_origins:
+        for item in raw_origins.split(","):
+            clean = item.strip().rstrip("/")
+            if clean:
+                origins.add(clean)
+
+    return sorted(list(origins))
+
+
+CORS_ORIGINS: Final[list[str]] = get_cors_origins()
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -63,54 +127,40 @@ OPENAI_OAUTH_BASE_URL: Final[str] = AI_BASE_URL
 GPT_MODEL: Final[str] = AI_MODEL
 
 
-def get_config_value(name: str) -> str | None:
-    """Read an env var, falling back to local .env files."""
-    value = os.getenv(name)
-    if value:
-        return value
-    return _read_dotenv().get(name)
-
-
-def _read_dotenv() -> dict[str, str]:
-    values: dict[str, str] = {}
-    for path in _dotenv_paths():
-        if not path.exists():
-            continue
-        for line in path.read_text(encoding="utf-8").splitlines():
-            key, value = _parse_dotenv_line(line)
-            if key and key not in values:
-                values[key] = value
-    return values
-
-
-def _dotenv_paths() -> list[Path]:
-    backend_root = Path(__file__).resolve().parents[2]
-    repo_root = Path(__file__).resolve().parents[4]
-    return [backend_root / ".env", repo_root / ".env"]
-
-
-def _parse_dotenv_line(line: str) -> tuple[str | None, str]:
-    stripped = line.strip()
-    if not stripped or stripped.startswith("#") or "=" not in stripped:
-        return None, ""
-    key, value = stripped.split("=", 1)
-    key = key.strip()
-    value = value.strip().strip('"').strip("'")
-    return (key or None), value
-
-
 class YouTubeUploadConfig:
     """YouTube upload defaults and OAuth settings."""
 
     ACCOUNT_ID: Final[str] = os.getenv("YOUTUBE_ACCOUNT_ID", "default")
-    REDIRECT_URI: Final[str] = (
-        get_config_value("YOUTUBE_REDIRECT_URI")
-        or "http://localhost:8000/oauth/google/callback"
-    )
-    FRONTEND_DESTINATIONS_URL: Final[str] = (
-        get_config_value("FRONTEND_DESTINATIONS_URL")
-        or "http://localhost:3000/destinations"
-    )
+
+    @property
+    def BACKEND_URL(self) -> str:
+        return (
+            get_config_value("BACKEND_URL")
+            or get_config_value("PUBLIC_URL")
+            or "http://localhost:8000"
+        ).strip().rstrip("/")
+
+    @property
+    def FRONTEND_URL(self) -> str:
+        return (
+            get_config_value("FRONTEND_URL")
+            or "http://localhost:3000"
+        ).strip().rstrip("/")
+
+    @property
+    def REDIRECT_URI(self) -> str:
+        explicit = get_config_value("YOUTUBE_REDIRECT_URI")
+        if explicit:
+            return explicit
+        return f"{self.BACKEND_URL}/oauth/google/callback"
+
+    @property
+    def FRONTEND_DESTINATIONS_URL(self) -> str:
+        explicit = get_config_value("FRONTEND_DESTINATIONS_URL")
+        if explicit:
+            return explicit
+        return f"{self.FRONTEND_URL}/destinations"
+
     TOKEN_URI: Final[str] = os.getenv(
         "YOUTUBE_TOKEN_URI",
         "https://oauth2.googleapis.com/token",

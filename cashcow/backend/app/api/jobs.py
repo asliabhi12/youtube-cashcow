@@ -281,7 +281,13 @@ async def stream_job_logs(job_id: str) -> StreamingResponse:
             if progress is not None:
                 yield _sse(progress.model_dump_json(), event="progress")
             while True:
-                item = await queue.get()
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    # Emit a comment ping to prevent Cloudflare / proxy 100s idle read timeout
+                    yield ": ping\n\n"
+                    continue
+
                 if item is CLOSE:
                     # Terminal signal: tell the client the stream is done so it
                     # stops reconnecting, then end the generator.
@@ -302,7 +308,7 @@ async def stream_job_logs(job_id: str) -> StreamingResponse:
         event_stream(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             # Disable proxy buffering so entries flush to the client immediately.
             "X-Accel-Buffering": "no",

@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "@/lib/config";
+import { API_BASE_URL, getApiBaseUrl } from "@/lib/config";
 
 /** Payload returned by the backend's GET /health endpoint. */
 export interface HealthResponse {
@@ -11,7 +11,7 @@ export interface HealthResponse {
  * server is unreachable or responds with a non-OK status.
  */
 export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
-  const response = await fetch(`${API_BASE_URL}/health`, {
+  const response = await fetch(`${getApiBaseUrl()}/health`, {
     signal,
     cache: "no-store",
   });
@@ -313,7 +313,7 @@ export interface ProfileSummary {
 
 /** Fetch publishing destinations. Throws on a non-OK response. */
 export async function fetchDestinations(signal?: AbortSignal): Promise<Destination[]> {
-  const response = await fetch(`${API_BASE_URL}/destinations`, { signal, cache: "no-store" });
+  const response = await fetch(`${getApiBaseUrl()}/destinations`, { signal, cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Failed to load destinations: ${response.status}`);
   }
@@ -322,7 +322,7 @@ export async function fetchDestinations(signal?: AbortSignal): Promise<Destinati
 
 /** Delete a publishing destination. Throws on a non-OK response. */
 export async function deleteDestination(id: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/destinations/${encodeURIComponent(id)}`, {
+  const response = await fetch(`${getApiBaseUrl()}/destinations/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
   if (!response.ok) {
@@ -332,7 +332,7 @@ export async function deleteDestination(id: string): Promise<void> {
 
 /** Start YouTube OAuth connect flow and return the Google authorization URL. */
 export async function connectDestination(): Promise<string> {
-  const response = await fetch(`${API_BASE_URL}/destinations/connect`, {
+  const response = await fetch(`${getApiBaseUrl()}/destinations/connect`, {
     method: "POST",
   });
   if (!response.ok) {
@@ -361,7 +361,7 @@ export interface JobLogEntry {
 
 /** Create a job from a URL and creative profile. Throws on a non-OK response. */
 export async function createJob(input: CreateJobInput): Promise<Job> {
-  const response = await fetch(`${API_BASE_URL}/jobs`, {
+  const response = await fetch(`${getApiBaseUrl()}/jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -376,7 +376,7 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
 
 /** Fetch every creative profile as a summary. Throws on a non-OK response. */
 export async function fetchProfiles(signal?: AbortSignal): Promise<ProfileSummary[]> {
-  const response = await fetch(`${API_BASE_URL}/profiles`, { signal, cache: "no-store" });
+  const response = await fetch(`${getApiBaseUrl()}/profiles`, { signal, cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Failed to load profiles: ${response.status}`);
   }
@@ -385,7 +385,7 @@ export async function fetchProfiles(signal?: AbortSignal): Promise<ProfileSummar
 
 /** Fetch a single full profile by id. Throws on a non-OK response. */
 export async function fetchProfile(id: string, signal?: AbortSignal): Promise<Profile> {
-  const response = await fetch(`${API_BASE_URL}/profiles/${encodeURIComponent(id)}`, {
+  const response = await fetch(`${getApiBaseUrl()}/profiles/${encodeURIComponent(id)}`, {
     signal,
     cache: "no-store",
   });
@@ -397,7 +397,7 @@ export async function fetchProfile(id: string, signal?: AbortSignal): Promise<Pr
 
 /** Create a new custom profile. Throws on a non-OK response. */
 export async function createProfile(input: ProfileInput): Promise<Profile> {
-  const response = await fetch(`${API_BASE_URL}/profiles`, {
+  const response = await fetch(`${getApiBaseUrl()}/profiles`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -410,7 +410,7 @@ export async function createProfile(input: ProfileInput): Promise<Profile> {
 
 /** Overwrite an existing custom profile. Throws on a non-OK response. */
 export async function updateProfile(id: string, input: ProfileInput): Promise<Profile> {
-  const response = await fetch(`${API_BASE_URL}/profiles/${encodeURIComponent(id)}`, {
+  const response = await fetch(`${getApiBaseUrl()}/profiles/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -423,7 +423,7 @@ export async function updateProfile(id: string, input: ProfileInput): Promise<Pr
 
 /** Delete a custom profile. Throws on a non-OK response. */
 export async function deleteProfile(id: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/profiles/${encodeURIComponent(id)}`, {
+  const response = await fetch(`${getApiBaseUrl()}/profiles/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
   if (!response.ok) {
@@ -434,7 +434,7 @@ export async function deleteProfile(id: string): Promise<void> {
 /** Duplicate any profile into a new editable custom profile ("Save As"). */
 export async function duplicateProfile(id: string, label?: string): Promise<Profile> {
   const response = await fetch(
-    `${API_BASE_URL}/profiles/${encodeURIComponent(id)}/duplicate`,
+    `${getApiBaseUrl()}/profiles/${encodeURIComponent(id)}/duplicate`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -449,7 +449,7 @@ export async function duplicateProfile(id: string, label?: string): Promise<Prof
 
 /** Fetch application settings (e.g. the last-used profile). Throws on non-OK. */
 export async function fetchAppSettings(signal?: AbortSignal): Promise<AppSettings> {
-  const response = await fetch(`${API_BASE_URL}/settings`, { signal, cache: "no-store" });
+  const response = await fetch(`${getApiBaseUrl()}/settings`, { signal, cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Failed to load settings: ${response.status}`);
   }
@@ -458,7 +458,7 @@ export async function fetchAppSettings(signal?: AbortSignal): Promise<AppSetting
 
 /** Update application settings. Throws on a non-OK response. */
 export async function updateAppSettings(input: AppSettings): Promise<AppSettings> {
-  const response = await fetch(`${API_BASE_URL}/settings`, {
+  const response = await fetch(`${getApiBaseUrl()}/settings`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -471,7 +471,7 @@ export async function updateAppSettings(input: AppSettings): Promise<AppSettings
 
 /** Fetch overlay assets (built-ins first, then user uploads). Throws on non-OK. */
 export async function fetchOverlayAssets(signal?: AbortSignal): Promise<AssetSummary[]> {
-  const response = await fetch(`${API_BASE_URL}/assets?type=overlay`, {
+  const response = await fetch(`${getApiBaseUrl()}/assets?type=overlay`, {
     signal,
     cache: "no-store",
   });
@@ -489,7 +489,7 @@ export async function fetchOverlayAssets(signal?: AbortSignal): Promise<AssetSum
 export async function uploadOverlayAsset(file: File): Promise<AssetSummary> {
   const body = new FormData();
   body.append("file", file);
-  const response = await fetch(`${API_BASE_URL}/assets/upload`, {
+  const response = await fetch(`${getApiBaseUrl()}/assets/upload`, {
     method: "POST",
     body,
   });
@@ -510,7 +510,7 @@ export async function uploadOverlayAsset(file: File): Promise<AssetSummary> {
 
 /** Delete a user-uploaded overlay asset. Throws on a non-OK response. */
 export async function deleteOverlayAsset(name: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/assets/${encodeURIComponent(name)}`, {
+  const response = await fetch(`${getApiBaseUrl()}/assets/${encodeURIComponent(name)}`, {
     method: "DELETE",
   });
   if (!response.ok) {
@@ -520,7 +520,7 @@ export async function deleteOverlayAsset(name: string): Promise<void> {
 
 /** Fetch the available export-quality options. Throws on a non-OK response. */
 export async function fetchExportQualities(signal?: AbortSignal): Promise<Option[]> {
-  const response = await fetch(`${API_BASE_URL}/export-qualities`, {
+  const response = await fetch(`${getApiBaseUrl()}/export-qualities`, {
     signal,
     cache: "no-store",
   });
@@ -540,7 +540,7 @@ export async function fetchVideoMetadata(
   signal?: AbortSignal,
 ): Promise<VideoMetadata> {
   const response = await fetch(
-    `${API_BASE_URL}/videos/metadata?url=${encodeURIComponent(url)}`,
+    `${getApiBaseUrl()}/videos/metadata?url=${encodeURIComponent(url)}`,
     { signal, cache: "no-store" },
   );
   if (!response.ok) {
@@ -551,7 +551,7 @@ export async function fetchVideoMetadata(
 
 /** List all jobs. Throws if the server is unreachable or responds non-OK. */
 export async function listJobs(signal?: AbortSignal): Promise<Job[]> {
-  const response = await fetch(`${API_BASE_URL}/jobs`, {
+  const response = await fetch(`${getApiBaseUrl()}/jobs`, {
     signal,
     cache: "no-store",
   });
@@ -565,7 +565,7 @@ export async function listJobs(signal?: AbortSignal): Promise<Job[]> {
 
 /** Fetch a single job's current state. Throws on a non-OK response. */
 export async function getJob(jobId: string, signal?: AbortSignal): Promise<Job> {
-  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`, {
+  const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}`, {
     signal,
     cache: "no-store",
   });
@@ -582,7 +582,7 @@ export async function fetchJobMetadata(
   jobId: string,
   signal?: AbortSignal,
 ): Promise<JobMetadata> {
-  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/metadata`, {
+  const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}/metadata`, {
     signal,
     cache: "no-store",
   });
@@ -600,7 +600,7 @@ export async function fetchJobMetadata(
  * so callers can tell the user why nothing happened.
  */
 export async function deleteJob(jobId: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`, {
+  const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}`, {
     method: "DELETE",
   });
   if (!response.ok) {
@@ -613,7 +613,7 @@ export async function deleteJob(jobId: string): Promise<void> {
 
 /** Request cooperative cancellation for a queued or running job. */
 export async function cancelJob(jobId: string): Promise<Job> {
-  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/cancel`, {
+  const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}/cancel`, {
     method: "POST",
   });
   if (!response.ok) {
@@ -624,7 +624,7 @@ export async function cancelJob(jobId: string): Promise<Job> {
 
 /** Retry the publish stage for a processed job. */
 export async function retryPublish(jobId: string): Promise<Job> {
-  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/youtube/retry`, {
+  const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}/youtube/retry`, {
     method: "POST",
   });
   if (!response.ok) {
@@ -640,7 +640,7 @@ export async function fetchJobLogs(
   jobId: string,
   signal?: AbortSignal,
 ): Promise<JobLogEntry[]> {
-  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/logs`, {
+  const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}/logs`, {
     signal,
     cache: "no-store",
   });
@@ -654,10 +654,10 @@ export async function fetchJobLogs(
 
 /** URL of a job's live log stream (Server-Sent Events). */
 export function jobLogsEventsUrl(jobId: string): string {
-  return `${API_BASE_URL}/jobs/${jobId}/logs/events`;
+  return `${getApiBaseUrl()}/jobs/${jobId}/logs/events`;
 }
 
 /** URL to download a completed job's output file. */
 export function jobDownloadUrl(jobId: string): string {
-  return `${API_BASE_URL}/jobs/${jobId}/download`;
+  return `${getApiBaseUrl()}/jobs/${jobId}/download`;
 }

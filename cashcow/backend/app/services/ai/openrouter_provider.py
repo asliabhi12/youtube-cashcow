@@ -18,6 +18,8 @@ from urllib.request import Request, urlopen
 
 import yaml
 
+from app.core.config import get_config_value
+
 from app.services.ai.metadata_provider import (
     GeminiAPIError,
     GeminiAuthenticationError,
@@ -171,7 +173,7 @@ class OpenRouterMetadataProvider(MetadataProvider):
                 "Authorization": f"Bearer {self._api_key}",
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "HTTP-Referer": os.getenv("OPENROUTER_REFERER", "http://localhost:8000"),
+                "HTTP-Referer": os.getenv("OPENROUTER_REFERER") or get_config_value("BACKEND_URL") or "http://localhost:8000",
                 "X-Title": os.getenv("OPENROUTER_APP_TITLE", "YouTube CashCow"),
             },
             method="POST",
