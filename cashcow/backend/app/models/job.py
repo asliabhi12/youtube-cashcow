@@ -170,3 +170,36 @@ class Job(BaseModel):
     upload_attempts: int = 0
     cancel_requested: bool = False
     destinations: list[JobDestination] = Field(default_factory=list)
+    performance: "JobPerformanceTelemetry | None" = None
+
+
+class JobStageTiming(BaseModel):
+    """Timing for a single workflow stage."""
+
+    stage: str
+    start_time: str
+    end_time: str
+    duration: float
+
+
+class JobPerformanceMetrics(BaseModel):
+    """Hardware resource and media metrics for a job execution."""
+
+    input_resolution: str | None = None
+    output_resolution: str | None = None
+    video_duration: float | None = None
+    encoder: str | None = None
+    hardware_acceleration: str | None = None
+    average_fps: float | None = None
+    cpu_usage_percent: float | None = None
+    gpu_usage_percent: float | None = None
+    memory_mb: float | None = None
+    disk_io_mb: float | None = None
+
+
+class JobPerformanceTelemetry(BaseModel):
+    """Complete production timing and performance telemetry report for a job."""
+
+    stages: list[JobStageTiming] = Field(default_factory=list)
+    metrics: JobPerformanceMetrics = Field(default_factory=JobPerformanceMetrics)
+    total_duration_seconds: float = 0.0

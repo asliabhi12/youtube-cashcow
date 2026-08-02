@@ -28,9 +28,8 @@ class HardwareDetector:
 
     @staticmethod
     def _preferred_backend(system: str, machine: str, encoders: list[str]) -> HardwareBackend:
-        # VideoToolbox is deliberately first on Apple Silicon, then general
-        # portable priority follows the same hardware-first order.
-        if system == "Darwin" and machine.lower() in {"arm64", "aarch64"} and any(e in encoders for e in ENCODERS[HardwareBackend.VIDEOTOOLBOX]):
+        # VideoToolbox is preferred on macOS whenever compiled in FFmpeg
+        if system == "Darwin" and any(e in encoders for e in ENCODERS[HardwareBackend.VIDEOTOOLBOX]):
             return HardwareBackend.VIDEOTOOLBOX
         for backend in PRIORITY:
             if any(e in encoders for e in ENCODERS[backend]):

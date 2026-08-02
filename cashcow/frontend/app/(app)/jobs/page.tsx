@@ -5,6 +5,7 @@ import { Check, Clipboard, Download, ExternalLink, RotateCw, ScrollText, Square,
 
 import { DemoModeBanner } from "@/components/demo-mode/demo-mode-banner";
 import { useDemoMode } from "@/components/demo-mode/use-demo-mode";
+import { JobPerformanceDashboard } from "@/components/job-performance-dashboard";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { LogsDrawer } from "@/features/job-logs/logs-drawer";
@@ -606,6 +607,8 @@ function JobRow({
         )}
 
         <JobWorkflow destinations={initialJob.destinations} />
+
+        <JobPerformanceDashboard telemetry={initialJob.performance} jobId={initialJob.id} />
 
         {/* Bottom Line: Elapsed time and action buttons */}
         <div className="flex flex-col gap-3 border-t border-muted/40 pt-3 sm:flex-row sm:items-center sm:justify-between">

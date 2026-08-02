@@ -110,6 +110,33 @@ export interface Job {
   youtube_upload_error: string | null;
   upload_attempts: number;
   destinations: JobDestination[];
+  performance?: JobPerformanceTelemetry;
+}
+
+export interface JobStageTiming {
+  stage: string;
+  start_time: string;
+  end_time: string;
+  duration: number;
+}
+
+export interface JobPerformanceMetrics {
+  input_resolution?: string | null;
+  output_resolution?: string | null;
+  video_duration?: number | null;
+  encoder?: string | null;
+  hardware_acceleration?: string | null;
+  average_fps?: number | null;
+  cpu_usage_percent?: number | null;
+  gpu_usage_percent?: number | null;
+  memory_mb?: number | null;
+  disk_io_mb?: number | null;
+}
+
+export interface JobPerformanceTelemetry {
+  stages: JobStageTiming[];
+  metrics: JobPerformanceMetrics;
+  total_duration_seconds: number;
 }
 
 /** A clip range in seconds. `end` must be greater than `start`. */

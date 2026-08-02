@@ -33,12 +33,12 @@ class PipelineContext:
         path = Path(value).expanduser()
         return path if path.is_absolute() else (self.workflow_directory / path).resolve()
 
-    def flush_render_plan(self, runner: "PipelineRunner", step_name: str = "render") -> Path | None:
+    def flush_render_plan(self, runner: "PipelineRunner", step_name: str = "render", target_output: Path | None = None) -> Path | None:
         """Execute accumulated render plan in a single pass if operations are pending."""
         if self.render_plan.is_empty() or self.current_file is None:
             return self.current_file
 
-        output = self.next_output(step_name)
+        output = target_output or self.next_output(step_name)
         plan_to_execute = self.render_plan
         self.render_plan = RenderPlan()  # Reset render plan so operations don't accumulate on retry
         if hasattr(runner.processor, "execute_plan"):

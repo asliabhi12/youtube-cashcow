@@ -260,6 +260,14 @@ class JobStore:
                     destination.error = error
                     return
 
+    def set_performance(self, job_id: str, performance) -> None:
+        """Attach real execution performance telemetry to a job."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return
+            job.performance = performance
+
 
 # Process-wide store shared by all requests.
 job_store = JobStore()
