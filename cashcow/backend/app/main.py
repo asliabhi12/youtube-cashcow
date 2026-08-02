@@ -63,6 +63,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
+from app.auth.middleware import AuthMiddleware
+from app.auth.router import router as auth_router
+
 app = FastAPI(title="CashCow", version=VERSION, lifespan=lifespan)
 
 app.add_middleware(
@@ -72,7 +75,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(AuthMiddleware)
 
+app.include_router(auth_router)
 app.include_router(assets_router)
 app.include_router(destinations_router)
 app.include_router(health_router)
