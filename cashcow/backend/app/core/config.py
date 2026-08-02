@@ -14,11 +14,17 @@ from app.core.environment import Environment, get_current_environment
 # Application version, surfaced by the /health endpoint.
 VERSION: Final[str] = "0.1.0"
 
-# Origins allowed to call this API. The Next.js dev server runs on port 3000.
-CORS_ORIGINS: Final[list[str]] = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
+# Origins allowed to call this API.
+_raw_cors = os.getenv("CORS_ORIGINS") or os.getenv("FRONTEND_URL")
+if _raw_cors:
+    CORS_ORIGINS: Final[list[str]] = [origin.strip() for origin in _raw_cors.split(",") if origin.strip()] + [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://cashcow-frontend-p2711ufwn-asliabhi12s-projects.vercel.app",
+        "*",
+    ]
+else:
+    CORS_ORIGINS: Final[list[str]] = ["*"]
 
 
 def _env_bool(name: str, default: bool) -> bool:
