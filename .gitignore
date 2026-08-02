@@ -145,3 +145,5 @@ cashcow.db
 
 # Backups
 .cashcow_backups/
+
+cashcow/frontend/
