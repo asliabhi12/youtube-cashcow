@@ -144,3 +144,61 @@ def test_invalid_malformed_payload_rejection():
     }
     res = client.post("/profiles", json=malformed_payload)
     assert res.status_code == 422
+
+
+def test_allowed_destinations_persistence_and_update():
+    """Verify allowed destinations persist across save/reload, and editing updates correctly."""
+    client = TestClient(app)
+    channel_a = dest_service.upsert_connected_channel(
+        channel_title="Channel A",
+        channel_id="UC-chan-a-123",
+        thumbnail="",
+        description="Channel A",
+        access_token="tok-a",
+        refresh_token="ref-a",
+        token_expires_at=None,
+    )
+    channel_b = dest_service.upsert_connected_channel(
+        channel_title="Channel B",
+        channel_id="UC-chan-b-456",
+        thumbnail="",
+        description="Channel B",
+        access_token="tok-b",
+        refresh_token="ref-b",
+        token_expires_at=None,
+    )
+
+    # 1. Create profile with Channel A + Channel B
+    create_payload = {
+        "label": "Multi-Channel Profile",
+        "allowedDestinationIds": [channel_a.id, channel_b.id],
+    }
+    create_res = client.post("/profiles", json=create_payload)
+    assert create_res.status_code == 201
+    created_data = create_res.json()
+    prof_id = created_data["id"]
+
+    # Verify reload returns both Channel A & Channel B
+    reload_res1 = client.get(f"/profiles/{prof_id}")
+    assert reload_res1.status_code == 200
+    reloaded_data1 = reload_res1.json()
+
+    assert _get_dest_ids(reloaded_data1) == [channel_a.id, channel_b.id]
+    assert reloaded_data1.get("allowedDestinationIds") == [channel_a.id, channel_b.id]
+
+    # 2. Edit profile: remove Channel B (keep only Channel A)
+    update_payload = {
+        "label": "Multi-Channel Profile",
+        "allowedDestinationIds": [channel_a.id],
+    }
+    update_res = client.put(f"/profiles/{prof_id}", json=update_payload)
+    assert update_res.status_code == 200
+
+    # Verify reload returns ONLY Channel A
+    reload_res2 = client.get(f"/profiles/{prof_id}")
+    assert reload_res2.status_code == 200
+    reloaded_data2 = reload_res2.json()
+
+    assert _get_dest_ids(reloaded_data2) == [channel_a.id]
+    assert reloaded_data2.get("allowedDestinationIds") == [channel_a.id]
+

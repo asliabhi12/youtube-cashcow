@@ -17,10 +17,6 @@ def test_public_demo_mode_readonly_endpoints():
     profiles_resp = client.get("/profiles")
     assert profiles_resp.status_code == 200
 
-    # Destinations list
-    dest_resp = client.get("/destinations")
-    assert dest_resp.status_code == 200
-
     # Settings
     settings_resp = client.get("/settings")
     assert settings_resp.status_code == 200
@@ -31,8 +27,12 @@ def test_public_demo_mode_readonly_endpoints():
 
 
 def test_protected_action_endpoints_require_login():
-    """Verify that write operations and protected actions return 401 when unauthenticated."""
+    """Verify that write operations and protected endpoints return 401 when unauthenticated."""
     invalid_headers = {"Authorization": "Bearer invalid_token_str"}
+
+    # GET destinations requires login
+    dest_resp = client.get("/destinations", headers=invalid_headers)
+    assert dest_resp.status_code == 401
 
     # Creating job / starting workflow
     create_job_resp = client.post(

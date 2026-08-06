@@ -45,7 +45,6 @@ ALWAYS_PUBLIC_PATHS = {
 PUBLIC_READONLY_PREFIXES = (
     "/profiles",
     "/presets",
-    "/destinations",
     "/export-qualities",
     "/settings",
     "/assets",

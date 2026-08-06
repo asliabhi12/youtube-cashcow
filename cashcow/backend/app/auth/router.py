@@ -86,14 +86,19 @@ def login(payload: LoginRequest, request: Request, response: Response) -> LoginR
     # Calculate cookie max-age in seconds
     max_age = 30 * 24 * 3600 if payload.remember_me else 24 * 3600
 
+    # Detect HTTPS or Cloudflare Tunnel request for cross-site cookie support (Vercel)
+    is_https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    samesite_attr = "none" if is_https else "lax"
+    secure_attr = is_https
+
     # Set HTTP-only cookie
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
         max_age=max_age,
         httponly=True,
-        samesite="lax",
-        secure=False,  # Supported on both HTTP localhost & HTTPS tunnels
+        samesite=samesite_attr,
+        secure=secure_attr,
         path="/",
     )
 
@@ -106,13 +111,18 @@ def login(payload: LoginRequest, request: Request, response: Response) -> LoginR
 
 
 @router.post("/logout")
-def logout(response: Response) -> dict[str, str]:
+def logout(request: Request, response: Response) -> dict[str, str]:
     """Clear session cookie and log out the user."""
+    is_https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    samesite_attr = "none" if is_https else "lax"
+    secure_attr = is_https
+
     response.delete_cookie(
         key=COOKIE_NAME,
         path="/",
         httponly=True,
-        samesite="lax",
+        samesite=samesite_attr,
+        secure=secure_attr,
     )
     return {"status": "ok"}
 

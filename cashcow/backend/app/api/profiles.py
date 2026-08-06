@@ -68,6 +68,7 @@ def get_profile(profile_id: str) -> Profile:
     profile = profiles.get_profile(profile_id)
     if profile is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    logger.info("[GET Profile] Loaded stored profile: %s", profile.model_dump(by_alias=True))
     return profile
 
 

@@ -1,0 +1,4 @@
+# CashCow Launcher Requirements
+# Standard library (tkinter, urllib, subprocess, threading, json) handles runtime.
+# PyInstaller is required only if packaging a standalone macOS app (.app).
+pyinstaller>=6.0.0
