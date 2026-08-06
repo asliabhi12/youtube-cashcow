@@ -8,12 +8,10 @@ audio:
   effects:
   - type: volume
     gain: 10.0
-  - type: pitch
-    semitones: 1.0
   - type: deep_voice
     semitones: -3.0
 color:
-  brightness: 0.01
+  brightness: 0.02
   contrast: 1.05
   saturation: 1.02
   gamma: 1.05
@@ -37,4 +35,4 @@ overlay:
 metadata_prompt: Write a clear, searchable YouTube title and description with clean
   SEO, natural language, and accurate tags.
 allowed_destination_ids:
-- chitralekhanam
+- unbeatables-2

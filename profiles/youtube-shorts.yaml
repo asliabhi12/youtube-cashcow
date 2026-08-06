@@ -19,7 +19,6 @@ audio:
     - {type: bass, gain: 5}
     - {type: treble, gain: 3}
     - {type: volume, gain: 12}
-    - {type: speed, factor: 1.03}
 
 color:
   brightness: 0.05

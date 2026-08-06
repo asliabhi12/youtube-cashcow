@@ -160,7 +160,14 @@ class AudioOperation(RenderOperation):
     step_name: str = "audio_effect"
 
     def to_video_filters(self) -> list[str]:
-        return []
+        filters = []
+        for eff in self.effects:
+            eff_type = eff.get("type")
+            if eff_type == "speed":
+                factor = eff.get("factor", 1.0)
+                if factor != 1.0:
+                    filters.append(f"setpts=PTS/{factor:.6f}")
+        return filters
 
     def to_audio_filters(self) -> list[str]:
         filters = []
@@ -177,12 +184,17 @@ class AudioOperation(RenderOperation):
             elif eff_type == "pitch":
                 semitones = eff.get("semitones", 0.0)
                 if semitones != 0.0:
-                    rate_factor = 2.0 ** (semitones / 12.0)
-                    filters.append(f"asetrate=44100*{rate_factor:.4f},aresample=44100")
+                    ratio = 2.0 ** (semitones / 12.0)
+                    shifted_rate = round(44100 * ratio)
+                    tempo_factor = 44100.0 / shifted_rate
+                    from src.processor.audio import _atempo_chain
+                    tempo_str = _atempo_chain(tempo_factor)
+                    filters.append(f"asetrate={shifted_rate},aresample=44100,{tempo_str}")
             elif eff_type == "speed":
                 factor = eff.get("factor", 1.0)
                 if factor != 1.0:
-                    filters.append(f"atempo={factor:.4f}")
+                    from src.processor.audio import _atempo_chain
+                    filters.append(_atempo_chain(factor))
         return filters
 
 

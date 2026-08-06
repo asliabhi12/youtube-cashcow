@@ -80,7 +80,7 @@ def _pitch_fragment(semitones: float) -> str | None:
         return None
     ratio = 2 ** (semitones / 12)
     shifted_rate = round(SAMPLE_RATE * ratio)
-    tempo = _atempo_chain(1 / ratio)
+    tempo = _atempo_chain(SAMPLE_RATE / shifted_rate)
     return f"asetrate={shifted_rate},aresample={SAMPLE_RATE},{tempo}"
 
 
@@ -174,4 +174,10 @@ def apply_effects(runner: FFmpegRunner, source: PathLike, output: PathLike, conf
     """
     chain = effect_chain(config)
     filter_args = ["-af", chain] if chain else []
+    v_filters = []
+    for eff in config.effects:
+        if eff.type.lower() == "speed" and eff.factor != 1.0:
+            v_filters.append(f"setpts=PTS/{eff.factor:.6f}")
+    if v_filters:
+        filter_args.extend(["-vf", ",".join(v_filters)])
     return execute(runner, ["-i", str(input_path(source)), *filter_args, *encode], output, progress=progress, cancel_event=cancel_event)
