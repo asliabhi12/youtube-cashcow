@@ -39,6 +39,9 @@ ALWAYS_PUBLIC_PATHS = {
     "/openapi.json",
     "/redoc",
     "/favicon.ico",
+    "/oauth/google/callback",
+    "/youtube/auth/callback",
+    "/youtube/auth/start",
 }
 
 # Prefix list for public read-only GET endpoints (Demo Mode browsing)
@@ -62,8 +65,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        # 2. Allow explicitly public paths (login, health, docs)
-        if path in ALWAYS_PUBLIC_PATHS or path.startswith("/docs") or path.startswith("/openapi"):
+        # 2. Allow explicitly public paths (login, health, docs, oauth callbacks)
+        if (
+            path in ALWAYS_PUBLIC_PATHS
+            or path.startswith("/docs")
+            or path.startswith("/openapi")
+            or path.startswith("/oauth")
+            or path.startswith("/youtube/auth")
+        ):
             return await call_next(request)
 
         # 3. Allow public GET requests for browsing data in Demo Mode (except protected endpoints like video downloads)

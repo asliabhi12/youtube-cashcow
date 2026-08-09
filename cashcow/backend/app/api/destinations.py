@@ -14,12 +14,28 @@ router = APIRouter(prefix="/destinations", tags=["destinations"])
 def list_destinations() -> list[Destination]:
     return destinations.list_destinations()
 
+from pydantic import BaseModel, Field
+from fastapi import Request
+
+
+class ConnectDestinationInput(BaseModel):
+    return_url: str | None = Field(default=None, alias="return_url")
+
 
 @router.post("/connect")
-def connect_destination() -> dict[str, str]:
+def connect_destination(
+    request: Request,
+    payload: ConnectDestinationInput | None = None,
+) -> dict[str, str]:
     """Return the Google OAuth authorization URL to connect a YouTube channel."""
+    return_url = payload.return_url if payload and payload.return_url else None
+    if not return_url:
+        referer = request.headers.get("referer")
+        if referer and referer.startswith("http"):
+            return_url = referer
+
     try:
-        auth_url = authorization_url()
+        auth_url = authorization_url(return_url=return_url)
     except YouTubeOAuthError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

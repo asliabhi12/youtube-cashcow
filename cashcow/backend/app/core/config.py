@@ -112,14 +112,6 @@ class YouTubeUploadConfig:
     """YouTube upload defaults and OAuth settings."""
 
     ACCOUNT_ID: Final[str] = os.getenv("YOUTUBE_ACCOUNT_ID", "default")
-    REDIRECT_URI: Final[str] = (
-        get_config_value("YOUTUBE_REDIRECT_URI")
-        or "http://localhost:8000/oauth/google/callback"
-    )
-    FRONTEND_DESTINATIONS_URL: Final[str] = (
-        get_config_value("FRONTEND_DESTINATIONS_URL")
-        or "http://localhost:3000/destinations"
-    )
     TOKEN_URI: Final[str] = os.getenv(
         "YOUTUBE_TOKEN_URI",
         "https://oauth2.googleapis.com/token",
@@ -131,6 +123,26 @@ class YouTubeUploadConfig:
     PRIVACY_STATUS: Final[str] = os.getenv("YOUTUBE_PRIVACY_STATUS", "private")
     CATEGORY_ID: Final[str] = os.getenv("YOUTUBE_CATEGORY_ID", "22")
     MADE_FOR_KIDS: Final[bool] = _env_bool("YOUTUBE_MADE_FOR_KIDS", False)
+
+    @property
+    def REDIRECT_URI(self) -> str:
+        val = get_config_value("YOUTUBE_REDIRECT_URI")
+        if val and val.strip():
+            return val.strip()
+        backend_url = get_config_value("BACKEND_URL")
+        if backend_url and backend_url.strip():
+            return f"{backend_url.strip().rstrip('/')}/oauth/google/callback"
+        return "http://localhost:8000/oauth/google/callback"
+
+    @property
+    def FRONTEND_DESTINATIONS_URL(self) -> str:
+        val = get_config_value("FRONTEND_DESTINATIONS_URL")
+        if val and val.strip():
+            return val.strip()
+        frontend_url = get_config_value("FRONTEND_URL")
+        if frontend_url and frontend_url.strip():
+            return f"{frontend_url.strip().rstrip('/')}/destinations"
+        return "http://localhost:3000/destinations"
 
 
 youtube_upload_config = YouTubeUploadConfig()

@@ -55,10 +55,10 @@ class YouTubeChannelDetails:
     description: str
 
 
-def authorization_url() -> str:
+def authorization_url(return_url: str | None = None) -> str:
     client_id = _required_config("YOUTUBE_CLIENT_ID")
     state = secrets.token_urlsafe(24)
-    destinations.store_oauth_state(state)
+    destinations.store_oauth_state(state, return_url=return_url)
     logger.info("[oauth] authorization_url: state stored for pending OAuth callback")
     query = urlencode(
         {
@@ -75,8 +75,9 @@ def authorization_url() -> str:
     return f"{AUTH_URL}?{query}"
 
 
-def exchange_code(code: str, state: str) -> OAuthTokenResponse:
-    if not destinations.consume_oauth_state(state):
+def exchange_code(code: str, state: str) -> tuple[OAuthTokenResponse, str | None]:
+    valid, return_url = destinations.consume_oauth_state(state)
+    if not valid:
         raise YouTubeOAuthError("Invalid OAuth state")
     logger.info("[oauth] exchange_code: state consumed successfully")
 
@@ -108,11 +109,11 @@ def exchange_code(code: str, state: str) -> OAuthTokenResponse:
         scope=response.get("scope"),
         token_type=response.get("token_type"),
         expires_in=response.get("expires_in"),
-    )
+    ), return_url
 
 
-def connect_channel(code: str, state: str) -> Destination:
-    tokens = exchange_code(code, state)
+def connect_channel(code: str, state: str) -> tuple[Destination, str | None]:
+    tokens, return_url = exchange_code(code, state)
     if tokens.refresh_token is None:
         raise YouTubeOAuthError(
             "Google did not return a refresh token. Reconnect and approve offline access."
@@ -121,7 +122,7 @@ def connect_channel(code: str, state: str) -> Destination:
     # Keep the legacy single-account refresh token populated for older code paths
     # and tests, but destination publishing never reads it.
     set_local_config_value("YOUTUBE_REFRESH_TOKEN", tokens.refresh_token)
-    return destinations.upsert_connected_channel(
+    dest = destinations.upsert_connected_channel(
         channel_title=channel.title,
         channel_id=channel.channel_id,
         thumbnail=channel.thumbnail,
@@ -130,6 +131,7 @@ def connect_channel(code: str, state: str) -> Destination:
         refresh_token=tokens.refresh_token,
         token_expires_at=tokens.expires_at,
     )
+    return dest, return_url
 
 
 def fetch_channel_details(access_token: str) -> YouTubeChannelDetails:

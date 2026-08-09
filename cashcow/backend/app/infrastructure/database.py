@@ -211,11 +211,16 @@ def init_database() -> None:
 
             CREATE TABLE IF NOT EXISTS oauth_states (
                 state TEXT PRIMARY KEY,
+                return_url TEXT,
                 created_at TEXT NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_oauth_states_created ON oauth_states(created_at);
         """)
+        try:
+            conn.execute("ALTER TABLE oauth_states ADD COLUMN return_url TEXT")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
         cur = conn.execute("SELECT COUNT(*) FROM destinations")

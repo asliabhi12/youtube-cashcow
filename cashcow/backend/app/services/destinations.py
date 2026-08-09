@@ -249,34 +249,35 @@ def mark_status(destination_id: str, status: DestinationStatus) -> None:
 OAUTH_STATE_TTL = timedelta(minutes=15)
 
 
-def store_oauth_state(state: str) -> None:
+def store_oauth_state(state: str, return_url: str | None = None) -> None:
     init_database()
     _cleanup_expired_oauth_states()
     conn = _get_connection()
     conn.execute(
-        "INSERT OR REPLACE INTO oauth_states (state, created_at) VALUES (?, ?)",
-        (state, _now_text()),
+        "INSERT OR REPLACE INTO oauth_states (state, return_url, created_at) VALUES (?, ?, ?)",
+        (state, return_url, _now_text()),
     )
     conn.commit()
     conn.close()
 
 
-def consume_oauth_state(state: str) -> bool:
+def consume_oauth_state(state: str) -> tuple[bool, str | None]:
     init_database()
     conn = _get_connection()
     row = conn.execute(
-        "SELECT created_at FROM oauth_states WHERE state = ?", (state,)
+        "SELECT return_url, created_at FROM oauth_states WHERE state = ?", (state,)
     ).fetchone()
     if row is None:
         conn.close()
-        return False
+        return False, None
     created = _parse_dt(row["created_at"])
+    return_url = row["return_url"] if "return_url" in row.keys() else None
     conn.execute("DELETE FROM oauth_states WHERE state = ?", (state,))
     conn.commit()
     conn.close()
     if created is None or _now() - created > OAUTH_STATE_TTL:
-        return False
-    return True
+        return False, None
+    return True, return_url
 
 
 def _cleanup_expired_oauth_states() -> None:
