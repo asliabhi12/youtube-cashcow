@@ -66,8 +66,31 @@ def fetch_metadata(url: str) -> dict[str, object]:
     # pre-fetch doesn't hit the "confirm you're not a bot" wall the download would
     # otherwise clear. Logged by the downloader itself, so no per-lookup logging.
     apply_hardening(opts)
+
+    # 1. Try fast flat extraction first to avoid yt-dlp format evaluation errors
+    flat_opts = {**opts, "extract_flat": True}
     try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        with yt_dlp.YoutubeDL(flat_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if info:
+                if info.get("_type") == "playlist" or "entries" in info:
+                    raise InvalidVideoUrl("The URL points to a playlist, not a single video.")
+                title = info.get("title")
+                duration = info.get("duration")
+                if title and duration is not None:
+                    return {
+                        "title": title,
+                        "duration": float(duration) if isinstance(duration, (int, float)) else None,
+                    }
+    except InvalidVideoUrl:
+        raise
+    except Exception:
+        pass  # Fall back to full extraction
+
+    # 2. Fall back to format-flexible extraction
+    full_opts = {**opts, "format": "b/best"}
+    try:
+        with yt_dlp.YoutubeDL(full_opts) as ydl:
             info = ydl.extract_info(url, download=False)
     except Exception as exc:  # yt-dlp raises many subtypes; treat all as upstream failure.
         raise MetadataUnavailable(str(exc)) from exc
@@ -82,3 +105,4 @@ def fetch_metadata(url: str) -> dict[str, object]:
         "title": info.get("title"),
         "duration": float(duration) if isinstance(duration, (int, float)) else None,
     }
+
