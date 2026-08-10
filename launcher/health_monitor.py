@@ -73,18 +73,35 @@ class HealthMonitor:
             time.sleep(self.config.poll_interval_sec)
 
     def check_backend(self) -> bool:
-        """Probe GET http://localhost:8000/health."""
+        """Probe GET http://localhost:8000/health AND verify CashCow identity in /openapi.json."""
         try:
-            req = urllib.request.Request(
+            req_health = urllib.request.Request(
                 self.config.backend_health_url,
                 headers={"User-Agent": "CashCow-Launcher/1.0"},
             )
-            with urllib.request.urlopen(req, timeout=1.5) as resp:
-                if resp.status == 200:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    return data.get("status") == "ok"
+            with urllib.request.urlopen(req_health, timeout=1.5) as resp:
+                if resp.status != 200:
+                    return False
+                data = json.loads(resp.read().decode("utf-8"))
+                if data.get("status") != "ok":
+                    return False
         except Exception:
             return False
+
+        try:
+            openapi_url = self.config.backend_health_url.rsplit("/", 1)[0] + "/openapi.json"
+            req_openapi = urllib.request.Request(
+                openapi_url,
+                headers={"User-Agent": "CashCow-Launcher/1.0"},
+            )
+            with urllib.request.urlopen(req_openapi, timeout=1.5) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    title = data.get("info", {}).get("title")
+                    return title == "CashCow"
+        except Exception:
+            return False
+
         return False
 
     def check_frontend(self) -> bool:

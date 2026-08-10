@@ -17,7 +17,7 @@ class LauncherConfig:
         
         # Backend defaults
         self.backend_relative_cwd = "cashcow/backend"
-        self.backend_cmd = "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+        self.backend_cmd = "uvicorn app.main:app --host 0.0.0.0 --port 8000"
         self.backend_health_url = "http://localhost:8000/health"
         self.backend_docs_url = "http://localhost:8000/docs"
         
